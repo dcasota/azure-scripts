@@ -36,10 +36,10 @@
 $LocationName = "westeurope"
 
 # Resourcegroup setting
-$ResourceGroupName = "azure-scripts"
+$ResourceGroupName = "azure-scripts-rg"
 
 # network setting
-$NetworkName = "mssql-lab"
+$NetworkName = "mono-w2k19lab"
 
 # virtual network and subnets setting
 $SubnetAddressPrefix = "192.168.1.0/24"
@@ -47,14 +47,19 @@ $VnetAddressPrefix = "192.168.0.0/16"
 
 # VM setting
 $VMSize = "Standard_F4"
-$ComputerName = "mssql01"
-$VMName = "mssql01"
-$NICName = "mssqlnic01"
+$ComputerName = "w2k19-01"
+$VMName = $ComputerName
+$NICName = $ComputerName + "nic"
 $VMLocalAdminUser = "LocalAdminUser"
 $VMLocalAdminPwd="Secure123!"
 $disk1SizeGB = "20"
 $PublicIPDNSName="mypublicdns$(Get-Random)"
 $nsgName = "myNetworkSecurityGroup"
+$publisherName = "MicrosoftWindowsServer"
+$offerName = "WindowsServer"
+$skuName = "2019-Datacenter"
+$marketplacetermsname= "2019-Datacenter"
+$productversion = "17763.557.1907191810"
 
 # Create az login object. You get a pop-up prompting you to enter the credentials.
 $cred = Get-Credential -Message "Enter a username and password for az login."
@@ -116,18 +121,41 @@ $dataDiskName1 = "Data"
 $diskConfig1 = New-AzDiskConfig -SkuName $storageType -Location $LocationName -CreateOption Empty -DiskSizeGB $disk1SizeGB -Zone 1
 $dataDisk1 = New-AzDisk -DiskName $dataDiskName1 -Disk $diskConfig1 -ResourceGroupName $ResourceGroupName
 
+
+# marketplace plan
+# be aware first the marketplace terms must be accepted manually. https://github.com/terraform-providers/terraform-provider-azurerm/issues/1145#issuecomment-383070349
+
 # Create a virtual machine configuration
 $vmConfig = New-AzVMConfig -VMName $VMName -VMSize $VMSize | `
-Set-AzVMOperatingSystem -Windows -ComputerName $ComputerName -Credential $LocalAdminUserCredential | `
-Set-AzVMSourceImage -PublisherName 'MicrosoftWindowsServer' -Offer 'WindowsServer' -Skus '2019-Datacenter-with-Containers' -Version latest | `
-Add-AzVMDataDisk -Name $dataDiskName1 -CreateOption Attach -ManagedDiskId $dataDisk1.Id -Lun 0 | `
 Add-AzVMNetworkInterface -Id $nic.Id
 
-# Create the VM
-New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
+$vmimage= get-azvmimage -Location $LocationName -PublisherName $publisherName -Offer $offerName -Skus $skuName -Version $productversion
+if (!(([string]::IsNullOrEmpty($vmimage))))
+{
+    if (!(([string]::IsNullOrEmpty($vmimage.PurchasePlan))))
+    {
+        get-azmarketplaceterms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name
+        $agreementTerms=Get-AzMarketplaceterms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name
+        Set-AzMarketplaceTerms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name -Terms $agreementTerms -Accept
+        $vmConfig = Set-AzVMPlan -VM $vmConfig -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name
+    }
+
+    $vmConfig = Set-AzVMOperatingSystem -Windows -VM $vmConfig -ComputerName $ComputerName -Credential $LocalAdminUserCredential | `
+    # Add-AzVMDataDisk -Name $dataDiskName1 -CreateOption Attach -ManagedDiskId $dataDisk1.Id -Lun 0 | `
+    Set-AzVMSourceImage -PublisherName $publisherName -Offer $offerName -Skus $skuName -Version $productversion
+
+    # Create the VM
+    New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
+}
 
 # Verify that the vm was created
 $vmList = Get-AzVM -ResourceGroupName $resourceGroupName
 $vmList.Name
+
+Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName `
+    -VMName $VMName -Name "myCustomScript" `
+    -FileUri "https://raw.githubusercontent.com/dcasota/azure-scripts/master/MonoOnW2K19-install.ps1" `
+    -Run "MonoOnW2K19-install.ps1" -Location $LocationName
+
 
 #TODO
