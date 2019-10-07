@@ -14,5 +14,4 @@ cd "$env:programfiles\mono-6.4.0.198-x64-0"
 configure --prefix="$env:programfiles\mono-6.4.0.198-x64-0"
 make
 make install
-cd $folder
-curl -Uri https://dist.nuget.org/win-x86-commandline/latest/nuget.exe -Outfile "$folder\nuget.exe"
+
