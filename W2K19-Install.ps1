@@ -1,8 +1,9 @@
 ﻿#
-# Deploy a windows 2019 worker on Microsoft Azure with mono with cross-compile to Ubuntu and blob store the mkbundled nuget.exe.
+# Deploy a windows 2019 worker on Microsoft Azure. Optionally, the mono framework is installed.
 #
 # History
-# 0.1  4.10.2019   dcasota  Initial release
+# 0.1   4.10.2019   dcasota  Initial release
+# 0.2  14.10.2019   dcasota  uncomment Set-AzVMCustomScriptExtension
 #
 # related learn weblinks
 # https://github.com/MicrosoftDocs/azure-docs-powershell/blob/master/docs-conceptual/Azps-4.4.1/install-Az-ps.md
@@ -152,10 +153,10 @@ if (!(([string]::IsNullOrEmpty($vmimage))))
 $vmList = Get-AzVM -ResourceGroupName $resourceGroupName
 $vmList.Name
 
-Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName `
-    -VMName $VMName -Name "myCustomScript" `
-    -FileUri "https://raw.githubusercontent.com/dcasota/azure-scripts/master/MonoOnW2K19-install.ps1" `
-    -Run "MonoOnW2K19-install.ps1" -Location $LocationName
+# Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName `
+#     -VMName $VMName -Name "myCustomScript" `
+#     -FileUri "https://raw.githubusercontent.com/dcasota/azure-scripts/master/MonoOnW2K19-install.ps1" `
+#     -Run "MonoOnW2K19-install.ps1" -Location $LocationName
 
 
 #TODO
