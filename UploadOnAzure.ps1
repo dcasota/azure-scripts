@@ -33,9 +33,8 @@ $LocalFilePath="/${BlobName}"
 
 # Create az login object. You get a pop-up prompting you to enter the credentials.
 $tenant=Read-Host -Prompt "Enter your tenant id"
-$subscription=Read-Host -Prompt "Enter your subscription id"
 $cred = Get-Credential -Message "Enter a username and password for az login."
-Connect-AzAccount -Credential $cred -Tenant $tenant -Subscription $subscription
+Connect-AzAccount -Credential $psCred -TenantId $tenant  -ServicePrincipal
 # Verify Login
 if( -not $(Get-AzContext) ) { return }
 
