@@ -27,7 +27,7 @@ $ServerSubnetAddressPrefix = "192.168.1.0/24"
 $StorageAccountName="esxi67u3"
 $ContainerName="disks"
 $BlobName="mydisk.vhd"
-$LocalFilePath="/${BlobName}"
+$LocalFilePath="./../${BlobName}"
 
 
 
@@ -35,6 +35,7 @@ $LocalFilePath="/${BlobName}"
 $tenant=Read-Host -Prompt "Enter your tenant id"
 $subscriptionid=Read-Host -Prompt "Enter your subscription id"
 Connect-AzAccount -tenant $tenant -subscriptionid $subscriptionid
+az login
 # Verify Login
 if( -not $(Get-AzContext) ) { return }
 
