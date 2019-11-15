@@ -56,15 +56,25 @@ if ($result.exists -eq $false)
 
 #Upload
 $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
-Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath $LocalFilePath -Overwrite
 
-# $result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
-# if ($result.exists -eq $false)
-# {
-#     az storage blob upload --account-name $StorageAccountName `
-#     --account-key ($storageaccountkey[0]).value `
-#     --container-name ${ContainerName} `
-#     --type page `
-#     --file $LocalFilePath `
-#     --name ${BlobName}
-# }
+# cd ..
+# Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath mydisk.vhd -Overwrite
+# Detecting the empty data blocks completed.add-azvhd : Operation is not supported on this platform.
+# At line:1 char:1
+# + add-azvhd -resourcegroupname $resourcegroupname
+# + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# + CategoryInfo          : CloseError: (:) [Add-AzVhd], PlatformNotSupportedException
+# + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
+# see https://github.com/Azure/azure-powershell/issues/10549
+
+
+$result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
+if ($result.exists -eq $false)
+{
+    az storage blob upload --account-name $StorageAccountName `
+    --account-key ($storageaccountkey[0]).value `
+    --container-name ${ContainerName} `
+    --type page `
+    --file $LocalFilePath `
+    --name ${BlobName}
+}
