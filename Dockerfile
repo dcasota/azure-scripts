@@ -16,8 +16,7 @@ WORKDIR /root
 
 RUN apt-get update -y && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip qemu azure-cli && \
-	apt-get clean && \
-	curl -O -J -L https://downloads.dell.com/FOLDER05796977M/1/VMware-VMvisor-Installer-6.7.0.update03-14320388.x86_64-DellEMC_Customized-A00.iso
+	apt-get clean
 	
 # Set working directory so stuff doesn't end up in /
 WORKDIR /root
