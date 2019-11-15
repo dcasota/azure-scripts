@@ -26,4 +26,4 @@ SHELL [ "pwsh", "-command" ]
 RUN Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
 RUN install-module Az
 
-CMD ["/usr/bin/pwsh"]
+CMD ["/usr/bin/bash"]
