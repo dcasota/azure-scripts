@@ -56,14 +56,15 @@ if ($result.exists -eq $false)
 
 #Upload
 $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
+Add-AzVhd -Destination $urlOfUploadedVhd -LocalFilePath $LocalFilePath
 
-$result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
-if ($result.exists -eq $false)
-{
-    az storage blob upload --account-name $StorageAccountName `
-    --account-key ($storageaccountkey[0]).value `
-    --container-name ${ContainerName} `
-    --type page `
-    --file $LocalFilePath `
-    --name ${BlobName}
-}
+# $result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
+# if ($result.exists -eq $false)
+# {
+#     az storage blob upload --account-name $StorageAccountName `
+#     --account-key ($storageaccountkey[0]).value `
+#     --container-name ${ContainerName} `
+#     --type page `
+#     --file $LocalFilePath `
+#     --name ${BlobName}
+# }
