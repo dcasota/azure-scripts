@@ -15,7 +15,7 @@ ENV TERM linux
 WORKDIR /root
 
 RUN apt-get update -y && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip qemu azure-cli && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y curl unzip qemu azure-cli wget && \
 	apt-get clean
 	
 # Set working directory so stuff doesn't end up in /
