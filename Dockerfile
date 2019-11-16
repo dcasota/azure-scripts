@@ -42,23 +42,5 @@ RUN apt-get install build-essential libssl-dev -y && \
 	printf 'CONFIG_LOCALVERSION="%s"\nCONFIG_CROSS_COMPILE=""\n' "${local:+-$local}" >> /usr/src/linux/.config && \
 	wget -O /usr/src/linux/Module.symvers "http://mirror.scaleway.com/kernel/${arch}/${release}/Module.symvers" && \
 	apt-get install -y libssl-dev # adapt to your package manager && \
-	make -C /usr/src/linux prepare modules_prepare && \
-	apt-get install zfsutils-linux && \
-	zcat /proc/config.gz > /boot/config-4.5.7 && \
-	cd /tmp;  wget https://www.kernel.org/pub/linux/kernel/v4.x/linux-4.5.7.tar.xz && tar xf linux-4.5.7.tar.xz && \
-	cp -r /tmp/linux-4.5.7 /lib/modules/4.5.7-std-2/build && cd /lib/modules/4.5.7-std-2/build/ && \
-	cp /boot/config-4.5.7 .config && \
-	make oldconfig && \
-	make prepare scripts && \
-	apt-get remove -y zfsutils-linux && \
-	apt-get install -y zfsutils-linux && \
-	cd /lib/modules/4.5.7-std-2/build && make -j4 && \
-	dkms --verbose install spl/0.6.5.6 && \
-	dkms --verbose install zfs/0.6.5.6 && \
-	dkms status && \
-	spl, 0.6.5.6, 4.5.7-std-2, x86_64: installed && \
-	zfs, 0.6.5.6, 4.5.7-std-2, x86_64: installed && \
-	modprobe zfs && \
-	zpool list
-
+	make -C /usr/src/linux prepare modules_prepare
 CMD ["/bin/bash"]
