@@ -4,14 +4,14 @@
 
 #
 # History
-# 0.1  04.11.2019   dcasota  Initial release
+# 0.1  04.11.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
 
 $ScriptPath=$PSScriptRoot
 
 
 
 # Location setting
-$LocationName = "westeurope"
+$LocationName = "westus
 
 # Resourcegroup setting
 $ResourceGroupName = "photonos-lab-rg"
