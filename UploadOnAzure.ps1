@@ -11,7 +11,7 @@ $ScriptPath=$PSScriptRoot
 
 
 # Location setting
-$LocationName = "westus
+$LocationName = "westus"
 
 # Resourcegroup setting
 $ResourceGroupName = "photonos-lab-rg"
