@@ -27,7 +27,7 @@ $ServerSubnetAddressPrefix = "192.168.1.0/24"
 $StorageAccountName="esxi67u3"
 $ContainerName="disks"
 $BlobName="mydisk.vhd"
-$LocalFilePath="./../${BlobName}"
+$LocalFilePath="./${BlobName}"
 
 
 
@@ -57,8 +57,8 @@ if ($result.exists -eq $false)
 #Upload
 $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
 
-# cd ..
-# Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath mydisk.vhd -Overwrite
+cd ..
+Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath mydisk.vhd -Overwrite
 # Detecting the empty data blocks completed.add-azvhd : Operation is not supported on this platform.
 # At line:1 char:1
 # + add-azvhd -resourcegroupname $resourcegroupname
