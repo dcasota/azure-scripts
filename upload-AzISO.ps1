@@ -1,8 +1,10 @@
 ﻿#
 # Upload a .vhd'fied bootable ISO to Azure
 #
-# Prerequisites
-# - installed Azure Powershell (+ Azure CLI)
+# Prerequisites:
+#    - VMware Photon OS 3.0
+#    - Powershell + Azure Powershell ( + Azure CLI) release installed
+#    - Run as root
 #
 # History
 # 0.1  04.11.2019   dcasota  UNFINISHED! WORK IN PROGRESS!
