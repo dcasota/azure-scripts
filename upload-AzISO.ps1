@@ -89,10 +89,13 @@ $destinationContext = New-AzStorageContext -StorageAccountName $storageAccountNa
 New-AzStorageContainer -Name $containerName -Context $destinationContext -Permission blob
 
 $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(86400) -FullUri -Name $ContainerName -Permission rw
-# This is the containerSASURI
-$containerSASURI
 
-Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination ${containerSASURI} -LocalFilePath $filename -Overwrit
+$StartTime = Get-Date
+$EndTime = $startTime.AddHours(2.0)
+$BlobSASURI=New-AzureStorageBlobSASToken -Container $containerName -Blob $BlobName -Permission rwd -StartTime $StartTime -ExpiryTime $EndTime
+
+Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination ${BlobSASURI} -LocalFilePath $filename -Overwrite
+
 
 # FAIL #1 : Upload using Set-AzStorageBlobContent
 # -----------------------------------------------
