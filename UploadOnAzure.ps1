@@ -50,14 +50,16 @@ $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupNam
 # New-AzStorageContainer -Name $containerName -Context $destinationContext -Permission blob
 #Set-AzStorageBlobContent -File $LocalFilePath -Container $containerName -Blob $BlobName -Context $destinationContext
 # fails afterwards when creating VM with this is not a blob
+$context=$storageaccount.context
 
-$containerSASURI = New-AzStorageContainerSASToken -Context $storageaccount.context -ExpiryTime(get-date).AddSeconds(86400) -FullUri -Name $ContainerName -Permission rw
+$containerSASURI = New-AzStorageContainerSASToken -Context $context -ExpiryTime(get-date).AddSeconds(86400) -FullUri -Name $ContainerName -Permission rw
 cd /
 wget -O azcopy.tar.gz https://aka.ms/downloadazcopy-v10-linux
 tar -xf azcopy.tar.gz
 /azcopy_linux_amd64_10.3.2/azcopy login --tenant-id $tenant
 cd /root
-/azcopy_linux_amd64_10.3.2/azcopy copy $LocalFilePath $containerSASURI
+$containerSASURI
+# /azcopy_linux_amd64_10.3.2/azcopy copy mydisk.vhd $containerSASURI
 
 # FAIL1
 # Set AzStorageContext
