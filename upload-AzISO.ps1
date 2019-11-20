@@ -34,24 +34,26 @@ tdnf install wget unzip bzip2 curl -y
 $tenant=Read-Host -Prompt "Enter your Azure tenant id"
 $ISOurl=Read-Host -Prompt "Enter your ISO download url"
 
+cd /root
+
 # Install AzCopy & Login
-cd $LocalFilePath
 wget -O azcopy.tar.gz https://aka.ms/downloadazcopy-v10-linux
 tar -xf azcopy.tar.gz
-/azcopy_linux_amd64_10.3.2/azcopy login --tenant-id $tenant
+./azcopy_linux_amd64_10.3.2/azcopy login --tenant-id $tenant
 
 # Verify Login
 if( -not $(Get-AzContext) ) { return }
 
-# vbox
-cd /
+# download vbox
 wget https://download.virtualbox.org/virtualbox/6.0.14/VirtualBox-6.0.14-133895-Linux_amd64.run
 chmod a+x VirtualBox-6.0.14-133895-Linux_amd64.run
 ./VirtualBox-6.0.14-133895-Linux_amd64.run
+
+cd $LocalFilePath
+
+# convert
 curl -O -J -L $ISOurl
 vboxmanage convertfromraw $ISOurl $filename
-# TODO Cleanup vbox
-
 
 # Prepare upload
 $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
@@ -66,8 +68,6 @@ $destinationContext = New-AzStorageContext -StorageAccountName $storageAccountNa
 $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(86400) -FullUri -Name $ContainerName -Permission rw
 # This is the containerSASURI
 $containerSASURI
-
-cd $LocalFilePath
 
 # FAIL #1 : Upload using Set-AzStorageBlobContent
 # -----------------------------------------------
@@ -134,3 +134,4 @@ cd $LocalFilePath
 # + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
 # see https://github.com/Azure/azure-powershell/issues/10549
 
+# TODO Cleanup vbox, downloaded ISO, etc.
