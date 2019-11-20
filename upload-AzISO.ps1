@@ -60,7 +60,8 @@ chmod a+x VirtualBox-6.0.14-133895-Linux_amd64.run
 # them. Please see your Linux system's documentation for more information.
 # 
 # VirtualBox has been installed successfully.
-# cd $LocalFilePath
+
+cd $LocalFilePath
 
 # convert
 curl -O -J -L $ISOurl
