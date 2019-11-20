@@ -86,9 +86,13 @@ $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupNam
 
 $destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey[0].value
 
+New-AzStorageContainer -Name $containerName -Context $destinationContext -Permission blob
+
 $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(86400) -FullUri -Name $ContainerName -Permission rw
 # This is the containerSASURI
 $containerSASURI
+
+Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination ${containerSASURI} -LocalFilePath $filename -Overwrit
 
 # FAIL #1 : Upload using Set-AzStorageBlobContent
 # -----------------------------------------------
@@ -106,31 +110,24 @@ $containerSASURI
 # FAIL #2 : Upload using AzCopy
 # -----------------------------
 # command(s):
-/root/azcopy_linux_amd64_10.3.2/azcopy copy $filename $containerSASURI
+# /root/azcopy_linux_amd64_10.3.2/azcopy copy $filename $containerSASURI
 # error message:
 #
-# INFO: Scanning...
+# successfully completed. However, afterwards when uploading the following error message occurs:
+#  $disk1 = New-AzDisk -Disk $disk1Config -ResourceGroupName $ResourceGroupName -DiskName $disk1name
+# New-AzDisk : The specified cookie value in VHD footer indicates that disk 'isobootdisk.vhd' with blob https://vhdfiedbootableiso.blob.core.windows.net:8443/disks/isobootdisk.vhd is not a supported VHD. Disk is expected to have cookie value 'conectix'.
+# ErrorCode: BadRequest
+# ErrorMessage: The specified cookie value in VHD footer indicates that disk 'isobootdisk.vhd' with blob https://vhdfiedbootableiso.blob.core.windows.net:8443/disks/isobootdisk.vhd is not a supported VHD. Disk is expected to have cookie value 'conectix'.
+# ErrorTarget: 
+# StatusCode: 400
+# ReasonPhrase: Bad Request
+# OperationID : 6843143c-f39c-489e-bd97-7fdf50d46c6f
+# At line:1 char:10
+# + $disk1 = New-AzDisk -Disk $disk1Config -ResourceGroupName $ResourceGr ...
+# +          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#     + CategoryInfo          : CloseError: (:) [New-AzDisk], ComputeCloudException
+#     + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.Automation.NewAzureRmDisk
 # 
-# Job 12ff670d-fecc-e247-5522-23b52a21a1ed has started
-# Log file is located at: /root/.azcopy/12ff670d-fecc-e247-5522-23b52a21a1ed.log
-# 
-# 0.0 %, 0 Done, 0 Failed, 1 Pending, 0 Skipped, 1 Total,
-# 
-# 
-# Job 12ff670d-fecc-e247-5522-23b52a21a1ed summary
-# Elapsed Time (Minutes): 0.0333
-# Total Number Of Transfers: 1
-# Number of Transfers Completed: 0
-# Number of Transfers Failed: 1
-# Number of Transfers Skipped: 0
-# TotalBytesTransferred: 0
-# Final Job Status: Failed
-#
-# output in /root/.azcopy/12ff670d-fecc-e247-5522-23b52a21a1ed.log:
-# 2019/11/20 21:41:52 ERR: [P#0-T#0] https://vhdfiedbootableiso.blob.core.windows.net/disks/isobootdisk.vhd?se=2019-11-21t21%3A41%3A50z&sig=-REDACTE
-# D-&sp=rw&sr=c&sv=2019-02-02: 403: Delete (incomplete) Page Blob -403 This request is not authorized to perform this operation using this permissio
-# n.. X-Ms-Request-Id:3ad1cbe4-f01c-000b-35eb-9f43e9000000
-
 
 
 # FAIL #3 : Upload using Add-AzVhd
