@@ -35,7 +35,6 @@ $LocalFilePath="./${BlobName}"
 $tenant=Read-Host -Prompt "Enter your tenant id"
 $subscriptionid=Read-Host -Prompt "Enter your subscription id"
 Connect-AzAccount -tenant $tenant -subscriptionid $subscriptionid
-az login
 # Verify Login
 if( -not $(Get-AzContext) ) { return }
 
@@ -47,18 +46,38 @@ if (([string]::IsNullOrEmpty($storageaccount)))
 }
 $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
 
+# Set AzStorageContext
+$destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey
+ 
+# Generate SAS URI
+$containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $storageContainerName -Permission rw
 
-$result=az storage container exists --account-name $storageaccountname --name ${ContainerName} | convertfrom-json
-if ($result.exists -eq $false)
-{
-    az storage container create --name ${ContainerName} --public-access blob --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value
-}
+echo $containersasuri
+Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $containerSASURI -LocalFilePath mydisk.vhd -Overwrite
+
+# Upload File using AzCopy
+# azcopy copy $LocalFilePath $containerSASURI –recursive
+
+
+# az login
+# $ctx = $storageAccount.Context
+# New-AzStorageContainer -Name $containerName -Context $ctx -Permission blob
+# Set-AzStorageBlobContent -File $LocalFilePath `
+#  -Container $containerName `
+#  -Blob $BlobName `
+#   -Context $ctx
+
+# $result=az storage container exists --account-name $storageaccountname --name ${ContainerName} | convertfrom-json
+# if ($result.exists -eq $false)
+# {
+#     az storage container create --name ${ContainerName} --public-access blob --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value
+# }
 
 #Upload
-$urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
+# $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
 
-cd ..
-Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath mydisk.vhd -Overwrite
+# cd ..
+# Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath mydisk.vhd -Overwrite
 # Detecting the empty data blocks completed.add-azvhd : Operation is not supported on this platform.
 # At line:1 char:1
 # + add-azvhd -resourcegroupname $resourcegroupname
@@ -67,14 +86,13 @@ Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -
 # + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
 # see https://github.com/Azure/azure-powershell/issues/10549
 
-
-$result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
-if ($result.exists -eq $false)
-{
-    az storage blob upload --account-name $StorageAccountName `
-    --account-key ($storageaccountkey[0]).value `
-    --container-name ${ContainerName} `
-    --type page `
-    --file $LocalFilePath `
-    --name ${BlobName}
-}
+# $result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
+# if ($result.exists -eq $false)
+# {
+#     az storage blob upload --account-name $StorageAccountName `
+#     --account-key ($storageaccountkey[0]).value `
+#     --container-name ${ContainerName} `
+#     --type page `
+#     --file $LocalFilePath `
+#     --name ${BlobName}
+# }
