@@ -47,18 +47,29 @@ if (([string]::IsNullOrEmpty($storageaccount)))
 $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
 
 # Set AzStorageContext
-$destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey
- 
+$destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey[0].value
+
+# New-AzStorageContainer -Name $containerName -Context $destinationContext -Permission blob
+#Set-AzStorageBlobContent -File $LocalFilePath -Container $containerName -Blob $BlobName -Context $destinationContext
+# fails afterwards when creating VM with this is not a blob
+
+$containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $ContainerName -Permission rw
+wget -O azcopy.tar.gz https://aka.ms/downloadazcopy-v10-linux
+tar -xf azcopy.tar.gz
+./azcopy_linux_amd64_10.3.2/azcopy copy $LocalFilePath $containerSASURI –recursive
+
+# FAIL1
 # Generate SAS URI
-$containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $storageContainerName -Permission rw
+# $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $ContainerName -Permission rw
+# Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination ${containerSASURI} -LocalFilePath mydisk.vhd -Overwrite
+# Error Add-AzVhd: https://esxi67u3.blob.core.windows.net/disks?sv=2019-02-02&sr=c&sig=bZeB7t%2Bn%2FqUr%2BwDP%2BTMcMZfVBnFkA%2FAWsuqTFaDf0a0%3D&se=2019-11-20T09%3A14%3A18Z&sp=rw (Parameter'Destination')
 
-echo $containersasuri
-Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $containerSASURI -LocalFilePath mydisk.vhd -Overwrite
-
+# FAIL2
 # Upload File using AzCopy
+# $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $ContainerName -Permission rw
 # azcopy copy $LocalFilePath $containerSASURI –recursive
 
-
+# FAIL3
 # az login
 # $ctx = $storageAccount.Context
 # New-AzStorageContainer -Name $containerName -Context $ctx -Permission blob
