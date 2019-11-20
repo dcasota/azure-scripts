@@ -33,6 +33,8 @@ tdnf install wget unzip bzip2 curl -y
 # Input parameter
 $tenant=Read-Host -Prompt "Enter your Azure tenant id"
 $ISOurl=Read-Host -Prompt "Enter your ISO download url"
+$ISOfilename= split-path $ISOurl -leaf
+
 
 cd /root
 
@@ -53,7 +55,7 @@ cd $LocalFilePath
 
 # convert
 curl -O -J -L $ISOurl
-vboxmanage convertfromraw $ISOurl $filename
+vboxmanage convertfromraw $ISOfilename $filename
 
 # Prepare upload
 $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
