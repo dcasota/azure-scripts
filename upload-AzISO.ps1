@@ -46,12 +46,19 @@ tar -xf azcopy.tar.gz
 # Verify Login
 if( -not $(Get-AzContext) ) { return }
 
-# download vbox
+# install vbox
 wget https://download.virtualbox.org/virtualbox/6.0.14/VirtualBox-6.0.14-133895-Linux_amd64.run
 chmod a+x VirtualBox-6.0.14-133895-Linux_amd64.run
 ./VirtualBox-6.0.14-133895-Linux_amd64.run
-
-cd $LocalFilePath
+# TODO
+# There were problems setting up VirtualBox.  To re-start the set-up process, run
+#   /sbin/vboxconfig
+# as root.  If your system is using EFI Secure Boot you may need to sign the
+# kernel modules (vboxdrv, vboxnetflt, vboxnetadp, vboxpci) before you can load
+# them. Please see your Linux system's documentation for more information.
+# 
+# VirtualBox has been installed successfully.
+# cd $LocalFilePath
 
 # convert
 curl -O -J -L $ISOurl
@@ -131,6 +138,8 @@ $containerSASURI
 #
 # # Result: completes successfully however throws an error afterwards when creating a VM from the vhd'fied bootable ISO.
 #
+# FAIL #4b : Upload using azure cli and add-azvhd (az login + connect-azaccount)
+# ------------------------------------------------------------------------------
 # command(s):
 # $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
 # Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath $filename -Overwrite
