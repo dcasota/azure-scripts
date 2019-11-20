@@ -46,6 +46,8 @@ tar -xf azcopy.tar.gz
 # Verify Login
 if( -not $(Get-AzContext) ) { return }
 
+Set-AzContext -Tenant $tenant
+
 # install vbox
 wget https://download.virtualbox.org/virtualbox/6.0.14/VirtualBox-6.0.14-133895-Linux_amd64.run
 chmod a+x VirtualBox-6.0.14-133895-Linux_amd64.run
@@ -106,6 +108,28 @@ $containerSASURI
 /root/azcopy_linux_amd64_10.3.2/azcopy copy $filename $containerSASURI
 # error message:
 #
+# INFO: Scanning...
+# 
+# Job 12ff670d-fecc-e247-5522-23b52a21a1ed has started
+# Log file is located at: /root/.azcopy/12ff670d-fecc-e247-5522-23b52a21a1ed.log
+# 
+# 0.0 %, 0 Done, 0 Failed, 1 Pending, 0 Skipped, 1 Total,
+# 
+# 
+# Job 12ff670d-fecc-e247-5522-23b52a21a1ed summary
+# Elapsed Time (Minutes): 0.0333
+# Total Number Of Transfers: 1
+# Number of Transfers Completed: 0
+# Number of Transfers Failed: 1
+# Number of Transfers Skipped: 0
+# TotalBytesTransferred: 0
+# Final Job Status: Failed
+#
+# output in /root/.azcopy/12ff670d-fecc-e247-5522-23b52a21a1ed.log:
+# 2019/11/20 21:41:52 ERR: [P#0-T#0] https://vhdfiedbootableiso.blob.core.windows.net/disks/isobootdisk.vhd?se=2019-11-21t21%3A41%3A50z&sig=-REDACTE
+# D-&sp=rw&sr=c&sv=2019-02-02: 403: Delete (incomplete) Page Blob -403 This request is not authorized to perform this operation using this permissio
+# n.. X-Ms-Request-Id:3ad1cbe4-f01c-000b-35eb-9f43e9000000
+
 
 
 # FAIL #3 : Upload using Add-AzVhd
