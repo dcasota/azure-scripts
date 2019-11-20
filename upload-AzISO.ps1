@@ -80,14 +80,13 @@ vboxmanage convertfromraw $ISOfilename $filename
 $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
 if (([string]::IsNullOrEmpty($storageaccount)))
 {
-    New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind Storage -SkuName Premium_LRS -ErrorAction SilentlyContinue
+    $storageaccount=New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind Storage -SkuName Premium_LRS -ErrorAction SilentlyContinue
 }
 $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
+$storagecontext=$storageaccount.context
+New-AzStorageContainer -Name $containerName -Context $storagecontext -Permission blob
 
 $destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey[0].value
-
-New-AzStorageContainer -Name $containerName -Context $destinationContext -Permission blob
-
 $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(86400) -FullUri -Name $ContainerName -Permission rw
 
 $StartTime = Get-Date
