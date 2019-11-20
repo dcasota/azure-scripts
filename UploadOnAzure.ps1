@@ -46,19 +46,20 @@ if (([string]::IsNullOrEmpty($storageaccount)))
 }
 $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
 
-# Set AzStorageContext
-$destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey[0].value
 
 # New-AzStorageContainer -Name $containerName -Context $destinationContext -Permission blob
 #Set-AzStorageBlobContent -File $LocalFilePath -Container $containerName -Blob $BlobName -Context $destinationContext
 # fails afterwards when creating VM with this is not a blob
 
-$containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $ContainerName -Permission rw
+$containerSASURI = New-AzStorageContainerSASToken -Context $storageaccount.context -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $ContainerName -Permission rw
 wget -O azcopy.tar.gz https://aka.ms/downloadazcopy-v10-linux
 tar -xf azcopy.tar.gz
-./azcopy_linux_amd64_10.3.2/azcopy copy $LocalFilePath $containerSASURI –recursive
+# ./azcopy_linux_amd64_10.3.2/azcopy login --tenant-id "here"
+./azcopy_linux_amd64_10.3.2/azcopy copy $LocalFilePath $containerSASURI
 
 # FAIL1
+# Set AzStorageContext
+# $destinationContext = New-AzStorageContext -StorageAccountName $storageAccountName -StorageAccountKey $storageAccountKey[0].value
 # Generate SAS URI
 # $containerSASURI = New-AzStorageContainerSASToken -Context $destinationContext -ExpiryTime(get-date).AddSeconds(3600) -FullUri -Name $ContainerName -Permission rw
 # Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination ${containerSASURI} -LocalFilePath mydisk.vhd -Overwrite
