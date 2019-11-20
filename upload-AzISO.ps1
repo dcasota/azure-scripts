@@ -56,6 +56,15 @@ cd $LocalFilePath
 # convert
 curl -O -J -L $ISOurl
 vboxmanage convertfromraw $ISOfilename $filename
+# TODO
+# WARNING: The vboxdrv kernel module is not loaded. Either there is no module
+#          available for the current kernel (4.19.82-1.ph3) or it failed to
+#          load. Please recompile the kernel module and install it by
+# 
+#            sudo /sbin/vboxconfig
+# 
+#          You will not be able to start VMs until this problem is fixed.
+
 
 # Prepare upload
 $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
@@ -137,3 +146,8 @@ $containerSASURI
 # see https://github.com/Azure/azure-powershell/issues/10549
 
 # TODO Cleanup vbox, downloaded ISO, etc.
+rm -r /root/azcopy_linux_amd64_10.3.2
+rm -r /root/azcopy.tar.gz
+rm -r /root/VirtualBox-6.0.14-133895-Linux_amd64.run
+rm $LocalFilePath/$filename
+rm $LocalFilePath/$ISOfilename
