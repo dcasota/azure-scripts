@@ -97,13 +97,13 @@ $containerSASURI
 # (successfully completes!)
 # However, afterwards when creating a VM, the error message shown is 'this is not a blob'. In reference to
 # https://www.thomas-zuehlke.de/2019/08/creating-azure-vm-based-on-local-vhd-files/ this is expected as it is not a storage account of type "Pageblob".
-# The solution to use AzCopy has the prerequisite that the account used must have the role "Blob Data Contributor" assigned. See https://github.com/Azure/azure-storage-azcopy/issues/77.
+# The solution is to use AzCopy, and AzCopy has the prerequisite that the account used must have the role "Blob Data Contributor" assigned. See https://github.com/Azure/azure-storage-azcopy/issues/77.
 
 
 # FAIL #2 : Upload using AzCopy
 # -----------------------------
 # command(s):
-# /azcopy_linux_amd64_10.3.2/azcopy copy $filename $containerSASURI
+/root/azcopy_linux_amd64_10.3.2/azcopy copy $filename $containerSASURI
 # error message:
 #
 
@@ -115,6 +115,23 @@ $containerSASURI
 #
 # error message:
 # Add-AzVhd: https://[put blob name here].blob.core.windows.net/[put container name here]?sv=2019-02-02&sr=c&sig=[your sig]&se=2019-11-20T09%3A14%3A18Z&sp=rw (Parameter'Destination')
+#
+#
+# FAIL #3b : Upload using Add-AzVhd
+# ---------------------------------
+# command(s):
+# $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
+# Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath $filename -Overwrite
+#
+# error message on Pwsh6.2.3:
+#
+# Add-AzVhd : unsupported format
+# At line:1 char:1
+# + Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUp ...
+# + ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# + CategoryInfo          : CloseError: (:) [Add-AzVhd], VhdParsingException
+# + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
+# 
 
 
 # FAIL #4 : Upload using azure cli and add-azvhd
@@ -144,7 +161,7 @@ $containerSASURI
 # $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
 # Add-AzVhd -ResourceGroupName $ResourceGroupName -Destination $urlOfUploadedVhd -LocalFilePath $filename -Overwrite
 #
-# error message:
+# error message on Pwsh6.0:
 #
 # Detecting the empty data blocks completed.add-azvhd : Operation is not supported on this platform.
 # At line:1 char:1
@@ -153,6 +170,7 @@ $containerSASURI
 # + CategoryInfo          : CloseError: (:) [Add-AzVhd], PlatformNotSupportedException
 # + FullyQualifiedErrorId : Microsoft.Azure.Commands.Compute.StorageServices.AddAzureVhdCommand
 # see https://github.com/Azure/azure-powershell/issues/10549
+#
 
 # TODO Cleanup vbox, downloaded ISO, etc.
 rm -r /root/azcopy_linux_amd64_10.3.2
