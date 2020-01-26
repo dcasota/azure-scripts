@@ -13,3 +13,7 @@ Deploys the Azure template Canonical Ubuntu 18.04 Server.
 
 ```MonoOnW2K19-install.ps1```
 This post-provisioning script is called by ```W2K19-Install.ps1```. It downloads and installs Mono (#todo not finished yet).
+
+
+```W2K19-HyperVGenV2-Install```
+Deploys the Azure template Windows Server 2019 Datacenter HyperV-Generation V2. 
