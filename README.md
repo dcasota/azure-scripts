@@ -14,6 +14,8 @@ Deploys the Azure template Canonical Ubuntu 18.04 Server.
 ```MonoOnW2K19-install.ps1```
 This post-provisioning script is called by ```W2K19-Install.ps1```. It downloads and installs Mono (#todo not finished yet).
 
+```Upload-PhotonVhd-as-Blob.ps1```
+Downloads and extracts the VMware Photon OS .vhd and uploads it as a page blob on Azure.
 
 ```W2K19-HyperVGenV2-Install```
 Deploys the Azure template Windows Server 2019 Datacenter HyperV-Generation V2. 
