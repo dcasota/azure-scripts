@@ -12,10 +12,10 @@ param(
 [String]$Uri="http://dl.bintray.com/vmware/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz",
 [Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
 [String]$tmppath,
-[Parameter(Mandatory = $true)]
-[ValidateNotNull()]
-[System.Management.Automation.PSCredential]
-[System.Management.Automation.Credential()]$cred,
+[Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
+[String]$username,
+[Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
+[String]$password,
 [Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
 [String]$ResourceGroupName,
 [Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
@@ -101,6 +101,8 @@ if (!(Test-Path $vhdfile))
 
 if (Test-Path $vhdfile)
 {
+
+	$Cred = New-Object System.Management.Automation.PSCredential $Username,$Password
 	# Azure login
 	connect-Azaccount -Credential $cred
 	$azcontext=get-azcontext
