@@ -5,6 +5,9 @@
 # 0.1   27.01.2020   dcasota  Initial release
 #
 #
+# Prerequisites:
+#   MS Windows OS
+#
 
 [CmdletBinding()]
 param(
@@ -33,32 +36,28 @@ Function DeGZip-File{
         $infile,
         $outfile = ($infile -replace '\.gz$','')
         )
-    $input = New-Object System.IO.FileStream $inFile, ([IO.FileMode]::Open), ([IO.FileAccess]::Read), ([IO.FileShare]::Read)
-    $output = New-Object System.IO.FileStream $outFile, ([IO.FileMode]::Create), ([IO.FileAccess]::Write), ([IO.FileShare]::None)
-    $gzipStream = New-Object System.IO.Compression.GzipStream $input, ([IO.Compression.CompressionMode]::Decompress)
-    $buffer = New-Object byte[](1024)
-    while($true){
-        $read = $gzipstream.Read($buffer, 0, 1024)
-        if ($read -le 0){break}
-        $output.Write($buffer, 0, $read)
+    if ($IsWindows -or $ENV:OS)
+    {    
+        $input = New-Object System.IO.FileStream $inFile, ([IO.FileMode]::Open), ([IO.FileAccess]::Read), ([IO.FileShare]::Read)
+        $output = New-Object System.IO.FileStream $outFile, ([IO.FileMode]::Create), ([IO.FileAccess]::Write), ([IO.FileShare]::None)
+        $gzipStream = New-Object System.IO.Compression.GzipStream $input, ([IO.Compression.CompressionMode]::Decompress)
+        $buffer = New-Object byte[](1024)
+        while($true){
+            $read = $gzipstream.Read($buffer, 0, 1024)
+            if ($read -le 0){break}
+            $output.Write($buffer, 0, $read)
         }
-    $gzipStream.Close()
-    $output.Close()
-    $input.Close()
+        $gzipStream.Close()
+        $output.Close()
+        $input.Close()
+    }
 }
 
 
 $RootDrive=(get-item $tmppath).Root.Name
 $PhotonOSTarGzFileName=split-path -path $Uri -Leaf
-$PhotonOSTarFileName=$PhotonOSTarGzFileName.Substring(0,$PhotonOSTarGzFileName.LastIndexOf('.')).split('\')[-1]
-$PhotonOSVhdFilename=$PhotonOSTarFileName.Substring(0,$PhotonOSTarFileName.LastIndexOf('.')).split('\')[-1]
-
-# check Azure CLI
-az help 1>$null 2>$null
-if ($lastexitcode -ne 0)
-{
-    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi; Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
-}
+$PhotonOSTarFileName=$PhotonOSTarGzFileName.Substring(0,$PhotonOSTarGzFileName.LastIndexOf('.')).split([io.path]::DirectorySeparatorChar)[-1]
+$PhotonOSVhdFilename=$PhotonOSTarFileName.Substring(0,$PhotonOSTarFileName.LastIndexOf('.')).split([io.path]::DirectorySeparatorChar)[-1]
 
 # check Azure Powershell
 if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-module Az -force -ErrorAction SilentlyContinue}
@@ -66,9 +65,25 @@ if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-m
 # check PS7Zip
 if (([string]::IsNullOrEmpty((get-module -name PS7zip -listavailable)))) {install-module PS7zip -force -ErrorAction SilentlyContinue}
 
-$tarfile=$tmppath + "\"+$PhotonOSTarFileName
-$vhdfile=$tmppath + "\"+$PhotonOSVhdFilename
-$gzfile=$tmppath + "\"+$PhotonOSTarGzFileName
+# check Azure CLI
+az help 1>$null 2>$null
+if ($lastexitcode -ne 0)
+{
+    if ($IsWindows -or $ENV:OS)
+    {
+        if (test-path AzureCLI.msi) {remove-item -path AzureCLI.msi -force}
+        Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi; Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
+        $env:path="C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+    }
+    else
+    {
+        curl -L https://aka.ms/InstallAzureCli | bash
+    }
+}
+
+$tarfile=$tmppath + [io.path]::DirectorySeparatorChar+$PhotonOSTarFileName
+$vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$PhotonOSVhdFilename
+$gzfile=$tmppath + [io.path]::DirectorySeparatorChar+$PhotonOSTarGzFileName
 
 if (!(Test-Path $vhdfile))
 {
@@ -101,9 +116,10 @@ if (!(Test-Path $vhdfile))
 
 if (Test-Path $vhdfile)
 {
-
-	$Cred = New-Object System.Management.Automation.PSCredential $Username,$Password
+    $secpasswd = ConvertTo-SecureString ${password} -AsPlainText -Force
+	$cred = New-Object System.Management.Automation.PSCredential ($username,$secpasswd)
 	# Azure login
+    # TODO Zuerst alle Adressen einbauen
 	connect-Azaccount -Credential $cred
 	$azcontext=get-azcontext
 	if ($azcontext)
