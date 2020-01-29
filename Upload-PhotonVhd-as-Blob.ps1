@@ -20,6 +20,8 @@ param(
 [Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
 [String]$password,
 [Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
+[String]$tenant,
+[Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
 [String]$ResourceGroupName,
 [Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
 [String]$LocationName,
@@ -118,8 +120,17 @@ if (Test-Path $vhdfile)
 {
     $secpasswd = ConvertTo-SecureString ${password} -AsPlainText -Force
 	$cred = New-Object System.Management.Automation.PSCredential ($username,$secpasswd)
+
+    # Add URLs to trusted sites
+    invoke-webrequest -Uri https://gallery.technet.microsoft.com/scriptcenter/How-to-batch-add-URLs-to-c8207c23/file/115241/1/Powershell.zip -Outfile Powershell.zip
+    Expand-7zip Powershell.zip -destinationpath $tmppath
+    $AddingtrustedSitesPath=$tmppath+[io.path]::DirectorySeparatorChar+"powershell"
+    $AddingTrustedSites=$AddingtrustedSitesPath+[io.path]::DirectorySeparatorChar+"AddingTrustedSites.ps1"
+    & "$AddingtrustedSites" -TrustedSites "https://login.microsoftonline.com","https://aadcdn.msftauth.net","https://aadcdn.msauth.net","https://login.live.com","https://logincdn.msauth.net"
+    remove-item -d $AddingtrustedSitesPath -force
+
 	# Azure login
-    # TODO Zuerst alle Adressen einbauen
+    # TODO Zuerst alle Adressen einbauen. Immer noch WS Management Fehler Remoting anschauen
 	connect-Azaccount -Credential $cred
 	$azcontext=get-azcontext
 	if ($azcontext)
