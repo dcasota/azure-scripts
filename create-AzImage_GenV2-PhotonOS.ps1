@@ -1,7 +1,7 @@
 ﻿#
 # Actually there is no VMware Photon OS offering on the Azure marketplace. The script creates an Azure Generation V2 image of VMware Photon OS.
 #
-# To make us of VMware Photon OS on Azure, the script first creates a temporary Windows VM.
+# To make use of VMware Photon OS on Azure, the script first creates a temporary Windows VM.
 # Inside that Windows VM the VMware Photon OS bits for Azure are downloaded from the VMware download location,
 # the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted.
 #
