@@ -18,8 +18,4 @@ This post-provisioning script is called by ```W2K19-Install.ps1```. It downloads
 Deploys the Azure template Windows Server 2019 Datacenter HyperV-Generation V2. 
 
 ```create-AzImage_GenV2-PhotonOS.ps1```
-Actually there is no VMware Photon OS offering on the Azure marketplace. The script creates an Azure Generation V2 image of VMware Photon OS.
-
-```Upload-PhotonVhd-as-Blob.ps1```
-Downloads and extracts the VMware Photon OS .vhd and uploads it as a page blob on Azure.
-To make use of VMware Photon OS on Azure, the script first creates a temporary Windows VM. Inside that Windows VM the VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For the .vhd file upload as Azure page blob a sub script ```Upload-PhotonVhd-as-Blob.ps1``` is used. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware.
+Actually there is no VMware Photon OS offering on the Azure marketplace. The script creates an Azure Generation V2 image of VMware Photon OS. To make use of VMware Photon OS on Azure, the script first creates a temporary Windows VM. Inside that Windows VM the VMware Photon OS bits for Azure are downloaded from the VMware download location, the extracted VMware Photon OS .vhd is uploaded as Azure page blob and after the Generation V2 image has been created, the Windows VM is deleted. For the .vhd file upload as Azure page blob a sub script ```Upload-PhotonVhd-as-Blob.ps1``` is used. For study purposes the temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V2 virtual hardware.
