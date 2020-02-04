@@ -122,16 +122,16 @@ if (Test-Path $vhdfile)
 	$cred = New-Object System.Management.Automation.PSCredential ($username,$secpasswd)
 
     # Add URLs to trusted sites
+    $AddingtrustedSitesPath=$tmppath+[io.path]::DirectorySeparatorChar+"powershell"
     invoke-webrequest -Uri https://gallery.technet.microsoft.com/scriptcenter/How-to-batch-add-URLs-to-c8207c23/file/115241/1/Powershell.zip -Outfile Powershell.zip
     Expand-7zip Powershell.zip -destinationpath $tmppath
-    $AddingtrustedSitesPath=$tmppath+[io.path]::DirectorySeparatorChar+"powershell"
     $AddingTrustedSites=$AddingtrustedSitesPath+[io.path]::DirectorySeparatorChar+"AddingTrustedSites.ps1"
-    & "$AddingtrustedSites" -TrustedSites "https://login.microsoftonline.com","https://aadcdn.msftauth.net","https://aadcdn.msauth.net","https://login.live.com","https://logincdn.msauth.net"
+    & "$AddingtrustedSites" -TrustedSites "login.microsoftonline.com","aadcdn.msftauth.net","aadcdn.msauth.net","login.live.com","logincdn.msauth.net"
     remove-item -d $AddingtrustedSitesPath -force
 
 	# Azure login
     # TODO Zuerst alle Adressen einbauen. Immer noch WS Management Fehler Remoting anschauen
-	connect-Azaccount -Credential $cred
+	connect-Azaccount -Credential $cred -tenant $tenant -ServicePrincipal
 	$azcontext=get-azcontext
 	if ($azcontext)
 	{
