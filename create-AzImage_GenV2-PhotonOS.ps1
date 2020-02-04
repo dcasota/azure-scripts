@@ -226,7 +226,7 @@ if (-not $($Image))
 
 
 $Image=Get-AzImage -ResourceGroupName $resourceGroupName -ImageName $ImageName
-if (-not ([Object]::ReferenceEquals($Image$null)))
+if (-not ([Object]::ReferenceEquals($Image,$null)))
 {
 	# Delete Disk and VM
 	Remove-AzDisk -ResourceGroupName $resourceGroupName -DiskName $DiskName -Force
