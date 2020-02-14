@@ -17,8 +17,8 @@ This post-provisioning script is called by ```W2K19-Install.ps1```. It downloads
 ```W2K19-HyperVGenV2-Install```
 Deploys the Azure template Windows Server 2019 Datacenter HyperV-Generation V2. 
 
-```create-AzImage_GenV2-PhotonOS.ps1```
-The script creates an Azure Generation V2 image of VMware Photon OS. Simply start the script using following parameters:
+## ```create-AzImage_GenV2-PhotonOS.ps1```
+```create-AzImage_GenV2-PhotonOS.ps1``` creates an Azure Generation V2 image of VMware Photon OS. Simply start the script using following parameters:
 ```create-AzImage_GenV2-PhotonOS.ps1 -username <Your Azure login username> -password <Your Azure login password> [-LocationName {YourLocation} -ResourceGroupName <YourResourceGroup> -StorageAccountName <YourStorageAccount> -ContainerName <YourContainer> -BlobName <YourBlobName> -ImageName <YourImageName> -SoftwareToProcess <YourSoftwareToProcess>]```
 The download URL of VMware Photon OS 3.0 Rev2 is stored as default value in SoftwareToProcess. All optional script parameters have predefined values. After the script has finished you find the VMware Photon OS HyperV Generation V2 image stored in your ResourceGroup. 
 
