@@ -34,19 +34,9 @@ param(
 
 
 # Location setting
-
-
 # Resourcegroup setting
-
-
 # Storage account setting
-
-
-
-
 $DiskName="PhotonOS"
-
-
 
 # settings of the temporary VM
 # network setting
@@ -83,12 +73,50 @@ if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-m
 
 # Verify Login
 $azcontext=Get-AzContext
-if( -not $($azcontext) )
+if (-not $($azcontext))
 {
 	# Azure login
 	[System.Management.Automation.Credential()]$cred = Get-credential -message 'Enter a username and password for the Azure login.'
-	connect-Azaccount -Credential $cred
+	$azcontext=connect-Azaccount -Credential $cred
+	if (-not $($azcontext)) {break}
 }
+$contextfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
+Save-AzContext -Path $contextfile -Force
+
+$contextfileEncoded=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext_enc.txt"
+if ((test-path($contextfileEncoded)) -eq $false)
+{
+    certutil -encode $contextfile $contextfileEncoded
+}
+$content = get-content -path $contextfileEncoded
+
+$ScriptFile = $($env:public) + [IO.Path]::DirectorySeparatorChar + "importazcontext.ps1"
+$value = '$CachedAzContext=@'+"'`r`n"
+# https://stackoverflow.com/questions/42407136/difference-between-redirection-to-null-and-out-null
+$null = new-item $ScriptFile -type file -force -value $value
+out-file -inputobject $content -FilePath $ScriptFile -Encoding ASCII -Append
+out-file -inputobject "'@" -FilePath $ScriptFile -Encoding ASCII -Append
+
+$Scriptrun=
+@'
+$orgfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
+$fileencoded=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext_encoded.txt"
+if ((test-path($fileencoded)) -eq $false)
+{
+	out-file -inputobject $CachedAzContext -FilePath $fileencoded
+	if ((test-path($orgfile)) -eq $true) {remove-item -path ($orgfile) -force}
+	certutil -decode $fileencoded $orgfile
+	if ((test-path($orgfile)) -eq $true)
+    {
+        import-azcontext -path $orgfile
+        remove-item -path ($fileencoded) -force
+        remove-item -path ($orgfile) -force
+    }
+}
+'@
+out-file -inputobject $ScriptRun -FilePath $ScriptFile -Encoding ASCII -append
+remove-item -path ($contextfile) -force
+remove-item -path ($contextfileEncoded) -force
 
 #Set the context to the subscription Id where Managed Disk exists and where VM will be created
 $subscriptionId=($azcontext).Subscription.Id
@@ -97,7 +125,7 @@ az account set --subscription $subscriptionId
 
 # Verify VM doesn't exist
 [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($VM,$null)))
+if (-not ($VM))
 {
 
 	# create lab resource group if it does not exist
@@ -193,7 +221,27 @@ if (-not ([Object]::ReferenceEquals($VM,$null)))
 	{
 		# enable boot diagnostics for serial console option
 		az vm boot-diagnostics enable --name $vmName --resource-group $ResourceGroupName --storage "https://${StorageAccountName}.blob.core.windows.net"
+        
+		# First remote install Az Module
+        az vm extension set --publisher Microsoft.Compute --version 1.8 --name "CustomScriptExtension" --vm-name $vmName --resource-group $ResourceGroupName --settings "{'commandToExecute':'powershell.exe Install-module Az -force -ErrorAction SilentlyContinue'}"
+		Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "CustomScriptExtension" -force
 
+		# Remote import azcontext from scriptfile
+        $Blobname="importazcontext.ps1"
+        $result=az storage blob exists --account-key ($storageaccountkey[0]).value --account-name $StorageAccountName --container-name ${ContainerName} --name ${BlobName} | convertfrom-json
+        if ($result.exists -eq $false)
+        {
+            az storage blob upload --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value --container-name ${ContainerName} --type block --file $ScriptFile --name ${BlobName}
+		    $return=Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName -Location $LocationName `
+			    -VMName $vmName `
+			    -Name "CustomScriptExtension" `
+			    -containername $ContainerName -storageaccountname $StorageAccountName `
+			    -Filename ${BlobName}	
+		    echo $return
+		    Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "CustomScriptExtension" -force
+		}
+
+		# Remote run Photon-vhd-Upload			
 		$return=Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName -Location $LocationName `
 			-VMName $vmName `
 			-Name "getPhotonVhdWindows" `
@@ -201,7 +249,7 @@ if (-not ([Object]::ReferenceEquals($VM,$null)))
 			-Run "Upload-PhotonVhd-as-Blob.ps1" -argument "-Uri $SoftwareToProcess -tmppath $VMSize_TempPath -username $($cred.getnetworkcredential().username) -password $($cred.getnetworkcredential().Password) -tenant $((get-azcontext).tenant.id) -ResourceGroupName $ResourceGroupName -LocationName $LocationName -StorageAccountName $StorageAccountName -ContainerName $ContainerName"
 		
 		echo $return
-		pause
+        Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "getPhotonVhdWindows" -force
 	}
 }
 
@@ -223,7 +271,6 @@ if (-not $($Image))
     $imageConfig = Set-AzImageOsDisk -Image $imageConfig -OsState Generalized -OsType Linux -ManagedDiskId $Disk.ID
     new-azimage -ImageName $ImageName -ResourceGroupName $ResourceGroupName -image $imageconfig
 }
-
 
 $Image=Get-AzImage -ResourceGroupName $resourceGroupName -ImageName $ImageName
 if (-not ([Object]::ReferenceEquals($Image,$null)))
