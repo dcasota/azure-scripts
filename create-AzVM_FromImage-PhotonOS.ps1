@@ -1,7 +1,8 @@
 ﻿#
-# The script creates an Azure Generation V2 VM from a VMware Photon OS Azure Image.
+# The script creates an Azure Generation V2 VM from an individual VMware Photon OS Azure Image.
 #
 # 
+# See creation using create-AzImage_GenV2-PhotonOS.ps1.
 #
 # History
 # 0.1   16.02.2020   dcasota  First release
@@ -41,7 +42,7 @@ param(
 [string]$ResourceGroupName = "photonos-lab-rg",
 [string]$StorageAccountName="photonoslab",
 [string]$ContainerName="disks",
-[string]$ImageName="photon-azure-3.0-9355405"
+[string]$ImageName="photon-azure-3.0-9355405",
 [string]$VMName = "PhotonOS"
 )
 
@@ -80,8 +81,6 @@ $secpasswd = ConvertTo-SecureString ${password} -AsPlainText -Force
 $cred = New-Object System.Management.Automation.PSCredential ($username,$secpasswd)
 $azcontext=connect-Azaccount -Credential $cred
 if (-not $($azcontext)) {break}
-$contextfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
-Save-AzContext -Path $contextfile -Force
 
 #Set the context to the subscription Id where Managed Disk exists and where VM will be created
 $subscriptionId=(get-azcontext).Subscription.Id
