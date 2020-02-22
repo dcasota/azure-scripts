@@ -43,28 +43,23 @@ param(
 [string]$StorageAccountName="photonoslab",
 [string]$ContainerName="disks",
 [string]$ImageName="photon-azure-3.0-9355405",
-[string]$VMName = "PhotonOS"
-)
-
-
+[string]$VMName = "PhotonOS",
 # VM settings
 # -----------
 # network setting
-$NetworkName = "w2k19network"
+[string]$NetworkName = "w2k19network",
 # virtual network and subnets setting
-$SubnetAddressPrefix = "192.168.1.0/24"
-$VnetAddressPrefix = "192.168.0.0/16"
-# VM setting
-$VMSize = "Standard_E4s_v3"
-$DiskName="PhotonOS"
-$VMSize_TempPath="d:" # on this drive $SoftwareToProcess is processed
-$ComputerName = $VMName
-$NICName = $ComputerName + "nic"
-$VMLocalAdminUser = "LocalAdminUser"
-$VMLocalAdminPwd="Secure2020123!" #12-123 chars
-$PublicIPDNSName="mypublicdns$(Get-Random)"
-$nsgName = "myNetworkSecurityGroup"
-
+[string]$SubnetAddressPrefix = "192.168.1.0/24",
+[string]$VnetAddressPrefix = "192.168.0.0/16",
+[string]# VM setting
+$VMSize = "Standard_E4s_v3",
+[string]$ComputerName = $VMName,
+[string]$NICName = $ComputerName + "nic",
+[string]$VMLocalAdminUser = "LocalAdminUser",
+[string]$VMLocalAdminPwd="Secure2020123!", #12-123 chars
+[string]$PublicIPDNSName="mypublicdns$(Get-Random)",
+[string]$nsgName = "myNetworkSecurityGroup"
+)
 
 # check Azure CLI
 if (-not ($($env:path).contains("CLI2\wbin")))
