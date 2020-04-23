@@ -23,8 +23,8 @@ This post-provisioning script is called by ```W2K19-Install.ps1```. It downloads
 ```create-AzVM_FromImage-PhotonOS.ps1```
 The script creates an Azure Generation V1 or V2 VM from a individual VMware Photon OS Azure Image.
 
-```create-AzImage-PhotonOS.ps1``
-```create-AzImage-PhotonOS.ps1```creates an Azure image of a VMware Photon OS release for Azure. Simply start the script using following parameters: 
+```create-AzImage-PhotonOS.ps1```
+The script creates an Azure image of a VMware Photon OS release for Azure. Simply start the script using following parameters: 
 
 ```./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -ResourceGroupName <YourResourceGroup> -Location <YourLocation> -StorageAccountName <YourStorageAccount> -ContainerName disks```
 
