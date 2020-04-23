@@ -1,21 +1,20 @@
 ﻿#
-# The script creates an Azure Generation V2 VM from an individual VMware Photon OS Azure Image.
+# The script creates an Azure VM from an individual VMware Photon OS Azure Image.
 #
 # 
-# See creation using create-AzImage_GenV2-PhotonOS.ps1.
+# See creation using create-AzImage-PhotonOS.ps1.
 #
 # History
 # 0.1   16.02.2020   dcasota  First release
+# 0.2   23.04.2020   dcasota  adopted params to create-AzImage-PhotonOS.ps1
 #
 #
 # Prerequisites:
 #    - Microsoft Powershell, Microsoft Azure Powershell
 #    - Azure account
 #
-# Parameter username
-#    Azure login username
-# Parameter password
-#    Azure login password
+# .PARAMETER cred
+#   Azure login credential
 # Parameter VMName
 #    Name of the VM to be created
 # Parameter LocationName
@@ -30,35 +29,89 @@
 #    Azure Blob Name for the Photon OS .vhd
 # Parameter Imagename
 #    Azure image name for the uploaded VMware Photon OS
-#
+# Parameter VMName
+#    Name of the virtual machine to be created
+# Parameter VMSize
+#    Azure VM size offering
+# Parameter nsgName
+#    network security group name
+# Parameter NetworkName
+#    network name
+# Parameter VnetAddressPrefix
+#    virtual network address. Use cidr format, eg. "192.168.0.0/16"
+# Parameter SubnetAddressPrefix
+#    subnet address. Use cidr format, eg. "192.168.0.0/24"
+# Parameter Computername
+#    computername
+# Parameter NICName
+#    virtual network card name
+# Parameter VMLocalAdminUser
+#    VM local username
+# Parameter VMLocalAdminPwd
+#    VM local user password
+# Parameter PublicIPDNSName
+#    VM public IP DNS name
+
 
 [CmdletBinding()]
 param(
-[Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
-[String]$username,
-[Parameter(Mandatory = $true, ParameterSetName = 'PlainText')]
-[String]$password,
-[string]$LocationName = "switzerlandnorth",
-[string]$ResourceGroupName = "photonos-lab-rg",
-[string]$StorageAccountName="photonoslab",
-[string]$ContainerName="disks",
-[string]$ImageName="photon-azure-3.0-9355405",
-[string]$VMName = "PhotonOS",
-# VM settings
-# -----------
-# network setting
-[string]$NetworkName = "w2k19network",
-# virtual network and subnets setting
-[string]$SubnetAddressPrefix = "192.168.1.0/24",
-[string]$VnetAddressPrefix = "192.168.0.0/16",
-[string]# VM setting
+[Parameter(Mandatory = $false)]
+[ValidateNotNull()]
+[System.Management.Automation.PSCredential]
+[System.Management.Automation.Credential()]$cred = (Get-credential -message 'Enter a username and password for the Azure login.'),
+
+[Parameter(Mandatory = $true)][ValidateNotNull()]
+[ValidateSet('eastasia','southeastasia','centralus','eastus','eastus2','westus','northcentralus','southcentralus',`
+'northeurope','westeurope','japanwest','japaneast','brazilsouth','australiaeast','australiasoutheast',`
+'southindia','centralindia','westindia','canadacentral','canadaeast','uksouth','ukwest','westcentralus','westus2',`'koreacentral','koreasouth','francecentral','francesouth','australiacentral','australiacentral2',`
+'uaecentral','uaenorth','southafricanorth','southafricawest','switzerlandnorth','switzerlandwest',`
+'germanynorth','germanywestcentral','norwaywest','norwayeast')]
+[string]$LocationName,
+
+[Parameter(Mandatory = $true)][ValidateNotNull()]
+[string]$ResourceGroupName,
+
+[Parameter(Mandatory = $true)][ValidateNotNull()]
+[string]$StorageAccountName,
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
+[string]$ContainerName = "disks",
+
+[Parameter(Mandatory = $true)][ValidateNotNull()]
+[string]$ImageName,
+
+[Parameter(Mandatory = $true)][ValidateNotNull()]
+[string]$VMName,
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
 $VMSize = "Standard_E4s_v3",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
+[string]$nsgName = "myNetworkSecurityGroup$VMName",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
+[string]$NetworkName = "w2k19network",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
+[string]$SubnetAddressPrefix = "192.168.1.0/24",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
+[string]$VnetAddressPrefix = "192.168.0.0/16",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$ComputerName = $VMName,
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$NICName = $ComputerName + "nic",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$VMLocalAdminUser = "LocalAdminUser",
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$VMLocalAdminPwd="Secure2020123!", #12-123 chars
-[string]$PublicIPDNSName="mypublicdns$(Get-Random)",
-[string]$nsgName = "myNetworkSecurityGroup"
+
+[Parameter(Mandatory = $false)][ValidateNotNull()]
+[string]$PublicIPDNSName="mypublicdns$VMName"
 )
 
 # check Azure CLI
@@ -72,8 +125,6 @@ if (-not ($($env:path).contains("CLI2\wbin")))
 if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-module Az -force -ErrorAction SilentlyContinue}
 
 # Azure Login
-$secpasswd = ConvertTo-SecureString ${password} -AsPlainText -Force
-$cred = New-Object System.Management.Automation.PSCredential ($username,$secpasswd)
 $azcontext=connect-Azaccount -Credential $cred
 if (-not $($azcontext)) {break}
 
