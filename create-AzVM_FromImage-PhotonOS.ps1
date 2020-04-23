@@ -51,6 +51,9 @@
 #    VM local user password
 # Parameter PublicIPDNSName
 #    VM public IP DNS name
+#
+# .EXAMPLE
+#    ./create-AzVM_FromImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -ResourceGroupName photonoslab-rg -Location switzerlandnorth -StorageAccountName photonosaccount -ImageName photon-azure-3.0-9355405.vhd -VMName PhotonOS3.0rev2
 
 
 [CmdletBinding()]

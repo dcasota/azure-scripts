@@ -49,8 +49,7 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -ResourceGroupName photonoslab-rg -Location switzerlandnorth -StorageAccountName photonosaccount -ContainerName disks
-
+#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -ResourceGroupName photonoslab-rg -Location switzerlandnorth -StorageAccountName photonosaccount
 [CmdletBinding()]
 param(
 [Parameter(Mandatory = $false)]
