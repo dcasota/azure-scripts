@@ -15,9 +15,6 @@ Deploys the Azure template Microsoft SQL Server 2014 on a Windows Server 2012 R2
 ```Ubuntu18.04-Install.ps1```
 Deploys the Azure template Canonical Ubuntu 18.04 Server.
 
-```MonoOnW2K19-install.ps1```
-This post-provisioning script is called by ```W2K19-Install.ps1```. It downloads and installs Mono (#todo not finished yet).
-
 # Azure scripts VMware Photon OS virtual machine related
 
 To make use of VMware Photon OS on Azure, actually there is no deploy function of a Photon OS template on Azure, so we manually process the bits through two helper scripts.
