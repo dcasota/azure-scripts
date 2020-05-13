@@ -15,6 +15,12 @@ Deploys the Azure template Microsoft SQL Server 2014 on a Windows Server 2012 R2
 ```Ubuntu18.04-Install.ps1```
 Deploys the Azure template Canonical Ubuntu 18.04 Server.
 
+```create-AzVMNodeRed_FromImage-PhotonOS.ps1```
+Deploys a VMware Photon OS VM with installed Siemens MindConnect Node-Red editor.
+Example provisioning: ```.\create-AzVMNodeRed_FromImage-PhotonOS.ps1 -LocationName switzerlandnorth -ResourceGroupName photonoslab-rg -StorageAccountName photonoslab -ImageName photon-azure-3.0-9355405.vhd -ContainerName disks -VMName nodered1 -VMSize Standard_B1ms```
+
+Requirements: Azure image of VMware Photon OS (see next chapter).
+
 # Azure scripts VMware Photon OS virtual machine related
 
 To make use of VMware Photon OS on Azure, actually there is no deploy function of a Photon OS template on Azure, so we manually process the bits through two helper scripts.
