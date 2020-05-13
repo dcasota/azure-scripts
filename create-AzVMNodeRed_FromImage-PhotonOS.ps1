@@ -1,13 +1,12 @@
 ﻿#
-# The script creates an Azure VM from an individual VMware Photon OS Azure Image.
+# The script creates an Azure VM with installed Node-Red editor from an individual VMware Photon OS Azure Image.
 #
 # 
 # See creation using create-AzImage-PhotonOS.ps1.
 #
 # History
-# 0.1   16.02.2020   dcasota  First release
-# 0.2   23.04.2020   dcasota  adopted params to create-AzImage-PhotonOS.ps1
-# 0.3   12.05.2020   dcasota  bugfix retrieving storageaccountkey
+# 0.1   13.05.2020   dcasota  First release
+# 
 #
 #
 # Prerequisites:
@@ -164,15 +163,20 @@ if ($result.exists -eq $false)
 $nsg=get-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
 if ( -not $($nsg))
 {
-    $rdpRule1 = New-AzNetworkSecurityRuleConfig -Name myRdpRule -Description "Allow RDP" `
-	-Access Allow -Protocol Tcp -Direction Inbound -Priority 110 `
+	$rdpRule1 = New-AzNetworkSecurityRuleConfig -Name myConsoleRule -Description "Allow Console" `
+	-Access Allow -Protocol Tcp -Direction Inbound -Priority 100 `
 	-SourceAddressPrefix Internet -SourcePortRange * `
 	-DestinationAddressPrefix * -DestinationPortRange 3389
 	$rdpRule2 = New-AzNetworkSecurityRuleConfig -Name mySSHRule -Description "Allow SSH" `
-	-Access Allow -Protocol Tcp -Direction Inbound -Priority 100 `
+	-Access Allow -Protocol Tcp -Direction Inbound -Priority 110 `
 	-SourceAddressPrefix Internet -SourcePortRange * `
 	-DestinationAddressPrefix * -DestinationPortRange 22
-	$nsg = New-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName -Location $LocationName -SecurityRules $rdpRule1,$rdpRule2
+	$rdpRule3 = New-AzNetworkSecurityRuleConfig -Name myNodeRedRule -Description "Allow Node-Red" `
+	-Access Allow -Protocol Tcp -Direction Inbound -Priority 120 `
+	-SourceAddressPrefix Internet -SourcePortRange * `
+	-DestinationAddressPrefix * -DestinationPortRange 1880
+
+	$nsg = New-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName -Location $LocationName -SecurityRules $rdpRule1,$rdpRule2,$rdpRule3
 }
 
 # set network if not already set
@@ -202,6 +206,7 @@ if (-not ($VM))
     $VMLocalAdminSecurePassword = ConvertTo-SecureString $VMLocalAdminPwd -AsPlainText -Force
     $LocalAdminUserCredential = New-Object System.Management.Automation.PSCredential ($VMLocalAdminUser, $VMLocalAdminSecurePassword)
 
+
     $VM = New-AzVMConfig -VMName $VMName -VMSize $VMSize
     $VM = Set-AzVMOperatingSystem -VM $VM -Linux -ComputerName $ComputerName -Credential $LocalAdminUserCredential
     $VM = Add-AzVMNetworkInterface -VM $VM -Id $nic.Id
@@ -210,5 +215,8 @@ if (-not ($VM))
 
     $VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName
     Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName
+	
+	az vm run-command invoke -g $ResourceGroupName -n $VMName --command-id RunShellScript --scripts "sudo tdnf distro-sync -y && sudo tdnf install -y wget curl glibc-iconv autoconf automake binutils diffutils gcc glib-devel glibc-devel linux-api-headers make ncurses-devel util-linux-devel zlib-devel nodejs && sudo npm install -g --unsafe-perm node-red && sudo /sbin/iptables -A INPUT -p tcp --dport 1880 -j ACCEPT && sudo node-red > /dev/null 2>&1 &"
+	
 }
 
