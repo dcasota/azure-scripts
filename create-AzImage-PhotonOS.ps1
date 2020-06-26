@@ -26,6 +26,7 @@
 #   0.1   16.02.2020   dcasota  First release
 #   0.2   24.02.2020   dcasota  Minor bugfixes, new param HyperVGeneration
 #   0.3   23.04.2020   dcasota  Minor bugfixes image name processing and nsg cleanup
+#   0.4   24.06.2020   dcasota  Bugfix extract .vhd.gz file
 #
 # .PARAMETER cred
 #   Azure login credential
@@ -49,7 +50,7 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -ResourceGroupName photonoslab-rg -Location switzerlandnorth -StorageAccountName photonosaccount
+#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -SoftwareToProcess "http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab-rg -Location switzerlandnorth -StorageAccountName virtualesxilab
 [CmdletBinding()]
 param(
 [Parameter(Mandatory = $false)]
@@ -211,6 +212,11 @@ if (Test-Path -d $tmppath)
             if ((Test-Path $downloadfile) -and ((([IO.Path]::GetExtension($tmpfilename)) -ieq ".gz")))
             {
                 tar -xzvf $downloadfile
+                if ($LASTEXITCODE -ne 0)
+                {
+                    install-module PS7Zip -force
+                    Expand-7Zip -FullName $downloadfile -destinationpath $tmppath
+                }
             }
         }
     }
