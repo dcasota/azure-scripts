@@ -1,8 +1,8 @@
 ﻿# .SYNOPSIS
 #  The script creates an Azure image of a VMware Photon OS release.
 # .DESCRIPTION
-#  To make use of VMware Photon OS on Azure, and without requiring to download the Photon OS bits locally, the script first creates a temporary Azure windows VM.
-#  Inside that windows VM, the Photon release Azure .vhd file is downloaded. You can specify the Photon release download link as param value of $SoftwareToProcess.
+#  To make use of VMware Photon OS on Azure, and without requiring to download the Photon OS bits locally, the script first creates a temporary Azure windows virtual machine.
+#  Inside that windows virtual machine, the Photon release Azure .vhd file is downloaded. You can specify the Photon release download link as param value of $SoftwareToProcess.
 #  VMware Photon OS release download links:
 #    Photon OS 3.0 Revision 2 Azure VHD:                 http://dl.bintray.com/vmware/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz
 #    Photon OS 3.0 GA Azure VHD:                         http://dl.bintray.com/vmware/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz
@@ -12,8 +12,9 @@
 #    Photon OS 2.0 GA Azure VHD cloud-init provisioning: http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
 #       Photon OS 2.0 RC Azure VHD - gz file:            https://bintray.com/vmware/photon/download_file?file_path=2.0%2FRC%2Fazure%2Fphoton-azure-2.0-31bb961.vhd.gz
 #       Photon OS 2.0 Beta Azure VHD:                    https://bintray.com/vmware/photon/download_file?file_path=2.0%2FBeta%2Fazure%2Fphoton-azure-2.0-8553d58.vhd
-#  The extracted VMware Photon OS release .vhd file is uploaded as Azure page blob,and after the Azure Photon image has been created, the temporary Windows VM is deleted.
-#  For study purposes the temporary VM operating system is Microsoft Windows Server 2019 on a specifiable Hyper-V generation virtual hardware using the Azure offering Standard_E4s_v3.
+#  The extracted VMware Photon OS release .vhd file is uploaded as Azure page blob,and after the Azure Photon image has been created, the temporary Windows virtual machine is deleted.
+#
+#  The temporary virtual machine operating system is Microsoft Windows Server 2019 on a specifiable Hyper-V generation virtual hardware using the Azure offering Standard_E4s_v3.
 #  virtual hardware related learn weblinks
 #    - https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
 #  prerequisites
@@ -27,6 +28,8 @@
 #   0.2   24.02.2020   dcasota  Minor bugfixes, new param HyperVGeneration
 #   0.3   23.04.2020   dcasota  Minor bugfixes image name processing and nsg cleanup
 #   0.4   24.06.2020   dcasota  Bugfix extract .vhd.gz file
+#   0.5   08.07.2020   dcasota  ValidateLength and ValidatePattern added
+#   0.6   19.09.2020   dcasota  check administrative privileges
 #
 # .PARAMETER cred
 #   Azure login credential
@@ -50,7 +53,8 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -SoftwareToProcess "http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab-rg -Location switzerlandnorth -StorageAccountName virtualesxilab
+#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -SoftwareToProcess "http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonos-rg -Location switzerlandnorth -StorageAccountName photonosstorage -HyperVGeneration V2
+
 [CmdletBinding()]
 param(
 [Parameter(Mandatory = $false)]
@@ -80,7 +84,7 @@ param(
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [string]$ResourceGroupName,
 
-[Parameter(Mandatory = $true)][ValidateNotNull()]
+[Parameter(Mandatory = $true)][ValidateNotNull()][ValidateLength(3,24)][ValidatePattern("[a-z0-9]")]
 [string]$StorageAccountName,
 
 [Parameter(Mandatory = $false)]
@@ -90,31 +94,26 @@ param(
 [string]$ContainerName = "disks",
 
 [Parameter(Mandatory = $false)]
-[string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess)) -Leaf) -split ".vhd")[0] + ".vhd"),
-
-[Parameter(Mandatory = $false)]
 [ValidateSet('V1','V2')]
 [string]$HyperVGeneration="V1",
+
+[Parameter(Mandatory = $false)]
+[string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess)) -Leaf) -split ".vhd")[0] + "_" + $HyperVGeneration + ".vhd"),
 
 [Parameter(Mandatory = $false)]
 [string]$DiskName="PhotonOS"
 )
 
-
-$Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess))
-
-
-
-# settings of the temporary VM
-# ----------------------------
-$VMSize="Standard_E4s_v3" # This default VM size offering includes a d: drive with 60GB non-persistent capacity
+# settings of the temporary virtual machine
+# -----------------------------------------
+$VMSize="Standard_E4s_v3" # This default virtual machine size offering includes a d: drive with 60GB non-persistent capacity
 $VMSize_TempPath="d:" # $SoftwareToProcess file is downloaded and extracted on this drive. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
 # network setting
 $NetworkName = "w2k19network"
 # virtual network and subnets setting
 $SubnetAddressPrefix = "192.168.1.0/24"
 $VnetAddressPrefix = "192.168.0.0/16"
-# VM setting
+# virtual machine setting
 $ComputerName = "w2k19"
 $VMName = $ComputerName
 $NICName = $ComputerName + "nic"
@@ -129,9 +128,20 @@ $marketplacetermsname= $skuName
 # Get-AzVMImage -Location switzerlandnorth -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2019-datacenter-with-containers-smalldisk-g2
 $productversion = "17763.1039.2002091844"
 
+#admin role
+$myWindowsPrincipal=new-object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())
+$AdminRole=($myWindowsPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
+# Uri
+$Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess))
+
 # check Azure CLI
 if (-not ($($env:path).contains("CLI2\wbin")))
 {
+    if (!($AdminRole))
+    {
+        write-host "Administrative privileges required."
+        break
+    }
     Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi; Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
     $env:path="C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
 }
@@ -146,7 +156,7 @@ if (-not $($azcontext)) {break}
 $contextfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
 Save-AzContext -Path $contextfile -Force
 
-#Set the context to the subscription Id where Managed Disk exists and where VM will be created if necessary
+#Set the context to the subscription Id where Managed Disk exists and where virtual machine will be created if necessary
 $subscriptionId=(get-azcontext).Subscription.Id
 # set subscription
 az account set --subscription $subscriptionId
@@ -270,11 +280,14 @@ $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name
 if ( -not $($storageaccount))
 {
 	$storageaccount=New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $Location -Kind Storage -SkuName Standard_LRS -ErrorAction SilentlyContinue
-	if ( -not $($storageaccount)) {break}
+	if ( -not $($storageaccount))
+    {
+        write-host "Storage account has not been created. Check if the name is already taken."
+        break
+    }
 }
 do {sleep -Milliseconds 1000} until ($((get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName).ProvisioningState) -ieq "Succeeded") 
 $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
-
 
 $result=az storage container exists --account-name $storageaccountname --name ${ContainerName} | convertfrom-json
 if ($result.exists -eq $false)
@@ -285,7 +298,7 @@ if ($result.exists -eq $false)
 $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $DiskName)}
 if (-not $($Disk))
 {
-	# a temporary VM is necessary because inside it downloads Photon and uploads the extracted disk as image base.
+	# a temporary virtual machine is necessary because inside it downloads Photon and uploads the extracted disk as image base.
 
 	[Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
 	if (-not ($VM))
@@ -298,11 +311,7 @@ if (-not $($Disk))
     		-Access Allow -Protocol Tcp -Direction Inbound -Priority 110 `
     		-SourceAddressPrefix Internet -SourcePortRange * `
     		-DestinationAddressPrefix * -DestinationPortRange 3389
-    		$rdpRule2 = New-AzNetworkSecurityRuleConfig -Name mySSHRule -Description "Allow SSH" `
-    		-Access Allow -Protocol Tcp -Direction Inbound -Priority 100 `
-    		-SourceAddressPrefix Internet -SourcePortRange * `
-    		-DestinationAddressPrefix * -DestinationPortRange 22
-    		$nsg = New-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $rdpRule1,$rdpRule2
+    		$nsg = New-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $rdpRule1
     	}
 
     	# set network if not already set
@@ -314,10 +323,10 @@ if (-not $($Disk))
     		$vnet | Set-AzVirtualNetwork
     	}
 
-		# create vm
+		# create virtual machine
 		# -----------
 
-		# VM local admin setting
+		# virtual machine local admin setting
 		$VMLocalAdminSecurePassword = ConvertTo-SecureString $VMLocalAdminPwd -AsPlainText -Force
 		$LocalAdminUserCredential = New-Object System.Management.Automation.PSCredential ($VMLocalAdminUser, $VMLocalAdminSecurePassword)
 
@@ -350,8 +359,7 @@ if (-not $($Disk))
 			$vmConfig = Set-AzVMOperatingSystem -Windows -VM $vmConfig -ComputerName $ComputerName -Credential $LocalAdminUserCredential | `
 			Set-AzVMSourceImage -PublisherName $publisherName -Offer $offerName -Skus $skuName -Version $productversion
 
-
-			# Create the VM
+			# Create the virtual machine
 			$VirtualMachine = New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vmConfig
 		}
 	}
@@ -412,7 +420,6 @@ if (-not $($Disk))
     New-AzDisk -Disk $diskConfig -ResourceGroupName $resourceGroupName -DiskName $DiskName -ErrorAction SilentlyContinue
 }
 
-
 $Image=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.name -ieq $Imagename)}
 if (-not $($Image))
 {
@@ -425,10 +432,10 @@ if (-not $($Image))
     }
 }
 
+# Delete virtual machine with its objects
 $Image=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.name -ieq $Imagename)}
 if (-not ([Object]::ReferenceEquals($Image,$null)))
 {
-	# Delete Disk and VM
     $VirtualMachine=Get-AzVM -ResourceGroupName $ResourceGroupName -Name $vmName
     if (-not ([Object]::ReferenceEquals($VirtualMachine,$null)))
        {
@@ -444,4 +451,4 @@ if (-not ([Object]::ReferenceEquals($Image,$null)))
     az storage container delete --name ${ContainerName} --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value
     remove-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Force -ErrorAction SilentlyContinue
 }
-else { write-host Error: Image creation failed. }
+else { write-host "Error: Image creation failed." }
