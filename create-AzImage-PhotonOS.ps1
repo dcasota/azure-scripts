@@ -1,25 +1,59 @@
 ﻿# .SYNOPSIS
-#  The script creates an Azure image of a VMware Photon OS release.
-# .DESCRIPTION
-#  To make use of VMware Photon OS on Azure, and without requiring to download the Photon OS bits locally, the script first creates a temporary Azure windows virtual machine.
-#  Inside that windows virtual machine, the Photon release Azure .vhd file is downloaded. You can specify the Photon release download link as param value of $SoftwareToProcess.
-#  VMware Photon OS release download links:
-#    Photon OS 3.0 Revision 2 Azure VHD:                 http://dl.bintray.com/vmware/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz
-#    Photon OS 3.0 GA Azure VHD:                         http://dl.bintray.com/vmware/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz
-#       Photon OS 3.0 RC Azure VHD:                      http://dl.bintray.com/vmware/photon/3.0/RC/azure/photon-azure-3.0-49fd219.vhd.tar.gz
-#       Photon OS 3.0 Beta:                              http://dl.bintray.com/vmware/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz
-#    Photon OS 2.0 GA Azure VHD gz file:                 http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz
-#    Photon OS 2.0 GA Azure VHD cloud-init provisioning: http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
-#       Photon OS 2.0 RC Azure VHD - gz file:            https://bintray.com/vmware/photon/download_file?file_path=2.0%2FRC%2Fazure%2Fphoton-azure-2.0-31bb961.vhd.gz
-#       Photon OS 2.0 Beta Azure VHD:                    https://bintray.com/vmware/photon/download_file?file_path=2.0%2FBeta%2Fazure%2Fphoton-azure-2.0-8553d58.vhd
-#  The extracted VMware Photon OS release .vhd file is uploaded as Azure page blob,and after the Azure Photon image has been created, the temporary Windows virtual machine is deleted.
+#  The Azure Virtual Machine Image builder script creates an Azure image of VMware Photon OS.
 #
-#  The temporary virtual machine operating system is Microsoft Windows Server 2019 on a specifiable Hyper-V generation virtual hardware using the Azure offering Standard_E4s_v3.
-#  virtual hardware related learn weblinks
+# .DESCRIPTION
+#  Actually there are no official Azure marketplace images of VMware Photon OS. You can create one using the official .vhd file of a specific VMware Photon OS build.
+#
+#  VMware Photon OS build download links:
+#    Photon OS 4.0 GA Azure VHD:                         https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz
+#      Photon OS 4.0 RC Azure VHD:                       https://packages.vmware.com/photon/4.0/RC/azure/photon-azure-4.0-a3a49f540.vhd.tar.gz
+#      Photon OS 4.0 Beta Azure VHD:                     https://packages.vmware.com/photon/4.0/Beta/azure/photon-azure-4.0-d98e681.vhd.tar.gz
+#    Photon OS 3.0 Revision 2 Azure VHD:                 https://packages.vmware.com/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz
+#    Photon OS 3.0 GA Azure VHD:                         https://packages.vmware.com/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz
+#       Photon OS 3.0 RC Azure VHD:                      https://packages.vmware.com/photon/3.0/RC/azure/photon-azure-3.0-49fd219.vhd.tar.gz
+#       Photon OS 3.0 Beta:                              https://packages.vmware.com/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz
+#    Photon OS 2.0 GA Azure VHD gz file:                 https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz
+#    Photon OS 2.0 GA Azure VHD cloud-init provisioning: https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
+#       Photon OS 2.0 RC Azure VHD - gz file:            https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz
+#       Photon OS 2.0 Beta Azure VHD:                    https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd
+#
+#  To simply the process, this Azure Virtual Machine Image builder script does a device login on Azure, and uses the specified location and resource group to create an Azure image.
+#  Actually, without specifying the VMware Photon OS build, it creates an Photon OS 4.0 GA Azure image.
+#
+#  
+#  This Azure Virtual Machine Image builder script uses Microsoft Azure Powershell and Microsoft Azure CLI as well. It installs those components if necessary.
+#  It doesn't make use of the Azure Image Builder template creation method.
+#
+#  With the start it does twice trigger an Azure login using the device code method.
+#  
+#      az : WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
+#      In Zeile:1 Zeichen:13
+#      + $azclilogin=az login --use-device-code
+#          +             ~~~~~~~~~~~~~~~~~~~~~~~~~~
+#          + CategoryInfo          : NotSpecified: (WARNING: To sig...o authenticate.:String) [], RemoteException
+#          + FullyQualifiedErrorId : NativeCommandError
+#
+#    WARNUNG: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
+#
+#  The Azure CLI and Azure Powershell output shows up as warning (see above).
+#  You will have to open a webbrowser, and fill in the code given by the Azure Powershell login output and by the Azure CLI login output.
+#
+#  The script first creates a temporary Azure windows virtual machine to not require to temporarily download the Photon OS bits locally.
+#  Inside the windows virtual machine customization process, the Photon release Azure .vhd file is downloaded. You can specify the Photon release download link as param value of $SoftwareToProcess.
+#  The extracted VMware Photon OS release .vhd file is uploaded as Azure page blob, and after the Azure Photon image has been created, the temporary Windows virtual machine is deleted.
+#  The temporary virtual machine operating system is Microsoft Windows Server 2019 on a specifiable Hyper-V generation virtual hardware V1/v2 using the Azure offering Standard_E4s_v3.
+#  Azure virtual hardware generation related weblink
 #    - https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
-#  prerequisites
-#    - Microsoft Powershell, Microsoft Azure Powershell
-#    - Azure account
+#
+#  The script hasn't been optimized in lack of issue findings. It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings, especially:
+#  "WARNUNG: System.ArgumentException: Argument passed in is not serializable." + appendings like "Microsoft.WindowsAzure.Commands.Common.MetricHelper"
+#  "az storage blob upload --account-name" + appendings like "CategoryInfo          : NotSpecified: (:String) [], RemoteException"
+#  "No Run File has been assigned, and the Custom Script extension will try to use the first specified File Name as the Run File."
+#
+#  .PREREQUISITES
+#    - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
+#    - Azure account with  Virtual Machine contributor role
+#
 #
 # .NOTES
 #   Author:  Daniel Casota
@@ -30,9 +64,14 @@
 #   0.4   24.06.2020   dcasota  Bugfix extract .vhd.gz file
 #   0.5   08.07.2020   dcasota  ValidateLength and ValidatePattern added
 #   0.6   19.09.2020   dcasota  check administrative privileges
+#   0.7   18.11.2020   dcasota  Photon OS 4.0 Beta Azure Vhd added
+#   0.8   29.11.2020   dcasota  fix login issue https://github.com/Azure/azure-powershell/issues/13337
+#   0.9   01.03.2021   dcasota  download URLs updated. Scheduled runas as localadminuser fixed.
 #
-# .PARAMETER cred
-#   Azure login credential
+# .PARAMETER azconnect
+#   Azure powershell devicecode login
+# .PARAMETER azclilogin
+#   Azure CLI devicecode login
 # .PARAMETER SoftwareToProcess
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
 # .PARAMETER Location
@@ -53,25 +92,32 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -SoftwareToProcess "http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonos-rg -Location switzerlandnorth -StorageAccountName photonosstorage -HyperVGeneration V2
+#    ./create-AzImage-PhotonOS.ps1 -SoftwareToProcess "https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz" -ResourceGroupName photonoslab -Location switzerlandnorth
+#
 
 [CmdletBinding()]
 param(
 [Parameter(Mandatory = $false)]
 [ValidateNotNull()]
-[System.Management.Automation.PSCredential]
-[System.Management.Automation.Credential()]$cred = (Get-credential -message 'Enter a username and password for the Azure login.'),	
+[string]$azconnect,
+[Parameter(Mandatory = $false)]
+[ValidateNotNull()]
+[string]$azclilogin,
 
 [Parameter(Mandatory = $false)]
-[ValidateSet('http://dl.bintray.com/vmware/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz', `
-'http://dl.bintray.com/vmware/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz',`
-'http://dl.bintray.com/vmware/photon/3.0/RC/azure/photon-azure-3.0-49fd219.vhd.tar.gz',`
-'http://dl.bintray.com/vmware/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz',`
-'http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz',`
-'http://dl.bintray.com/vmware/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz',`
-'https://bintray.com/vmware/photon/download_file?file_path=2.0%2FRC%2Fazure%2Fphoton-azure-2.0-31bb961.vhd.gz',`
-'https://bintray.com/vmware/photon/download_file?file_path=2.0%2FBeta%2Fazure%2Fphoton-azure-2.0-8553d58.vhd')]
-[String]$SoftwareToProcess="http://dl.bintray.com/vmware/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz",
+[ValidateSet('https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz', `
+'https://packages.vmware.com/photon/4.0/RC/azure/photon-azure-4.0-a3a49f540.vhd.tar.gz', `
+'https://packages.vmware.com/photon/4.0/Beta/azure/photon-azure-4.0-d98e681.vhd.tar.gz', `
+'https://packages.vmware.com/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz', `
+'https://packages.vmware.com/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz', `
+'https://packages.vmware.com/photon/3.0/RC/azure/photon-azure-3.0-49fd219.vhd.tar.gz', `
+'https://packages.vmware.com/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz', `
+'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz', `
+'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz', `
+'https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz', `
+'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
+[String]$SoftwareToProcess="https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz",
+
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [ValidateSet('eastasia','southeastasia','centralus','eastus','eastus2','westus','northcentralus','southcentralus',`
@@ -84,8 +130,8 @@ param(
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [string]$ResourceGroupName,
 
-[Parameter(Mandatory = $true)][ValidateNotNull()][ValidateLength(3,24)][ValidatePattern("[a-z0-9]")]
-[string]$StorageAccountName,
+[Parameter(Mandatory = $false)][ValidateNotNull()][ValidateLength(3,24)][ValidatePattern("[a-z0-9]")]
+[string]$StorageAccountName=$ResourceGroupName.ToLower()+"storage",
 
 [Parameter(Mandatory = $false)]
 [string]$StorageAccountType="Standard_LRS",
@@ -95,7 +141,7 @@ param(
 
 [Parameter(Mandatory = $false)]
 [ValidateSet('V1','V2')]
-[string]$HyperVGeneration="V1",
+[string]$HyperVGeneration="V2",
 
 [Parameter(Mandatory = $false)]
 [string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess)) -Leaf) -split ".vhd")[0] + "_" + $HyperVGeneration + ".vhd"),
@@ -104,6 +150,111 @@ param(
 [string]$DiskName="PhotonOS"
 )
 
+
+# https://github.com/Azure/azure-powershell/blob/master/documentation/breaking-changes/breaking-changes-messages-help.md
+Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
+
+# Check Windows Powershell environment. Original codesnippet parts from https://www.powershellgallery.com/packages/Az.Accounts/2.2.5/Content/Az.Accounts.psm1
+$PSDefaultParameterValues.Clear()
+Set-StrictMode -Version Latest
+
+function Test-DotNet
+{
+    try
+    {
+        if ((Get-PSDrive 'HKLM' -ErrorAction Ignore) -and (-not (Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full\' -ErrorAction Stop | Get-ItemPropertyValue -ErrorAction Stop -Name Release | Where-Object { $_ -ge 461808 })))
+        {
+            throw ".NET Framework versions lower than 4.7.2 are not supported in Az. Please upgrade to .NET Framework 4.7.2 or higher."
+            exit
+        }
+    }
+    catch [System.Management.Automation.DriveNotFoundException]
+    {
+        Write-Verbose ".NET Framework version check failed."
+        exit
+    }
+}
+
+if ($true -and ($PSEdition -eq 'Desktop'))
+{
+    if ($PSVersionTable.PSVersion -lt [Version]'5.1')
+    {
+        throw "PowerShell versions lower than 5.1 are not supported in Az. Please upgrade to PowerShell 5.1 or higher."
+        exit
+    }
+    Test-DotNet
+}
+
+if ($true -and ($PSEdition -eq 'Core'))
+{
+    if ($PSVersionTable.PSVersion -lt [Version]'6.2.4')
+    {
+        throw "Current Az version doesn't support PowerShell Core versions lower than 6.2.4. Please upgrade to PowerShell Core 6.2.4 or higher."
+        exit
+    }
+}
+
+# check Azure CLI user install
+if (test-path("$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"))
+{
+    $Remove = "$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"
+    $env:Path = ($env:Path.Split(';') | Where-Object -FilterScript {$_ -ne $Remove}) -join ';'
+    $env:path="$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+}
+
+$version=""
+try
+{
+    $version=az --version 2>$null
+    $version=(($version | select-string "azure-cli")[0].ToString().Replace(" ","")).Replace("azure-cli","")
+}
+catch {}
+
+# Update was introduced in 2.11.0, see https://docs.microsoft.com/en-us/cli/azure/update-azure-cli
+if (($version -eq "") -or ($version -lt "2.11.0"))
+{
+    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi
+    Start-Process msiexec.exe -Wait -ArgumentList "/a AzureCLI.msi /qb TARGETDIR=$env:APPDATA\azure-cli /quiet"
+    if (!(test-path("$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin")))
+    {
+        throw "Azure CLI installation failed."
+        exit
+    }
+    else
+    {
+        $Remove = "$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"
+        $env:Path = ($env:Path.Split(';') | Where-Object -FilterScript {$_ -ne $Remove}) -join ';'
+        $env:path="$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+
+        $version=az --version 2>$null
+        $version=(($version | select-string "azure-cli")[0].ToString().Replace(" ","")).Replace("azure-cli","")
+    }
+    if (test-path(.\AzureCLI.msi)) {rm .\AzureCLI.msi}
+}
+if ($version -lt "2.19.1")
+{
+    az upgrade --yes --all 2>&1 | out-null
+}
+
+
+# check Azure Powershell
+# https://github.com/Azure/azure-powershell/issues/13530
+# https://github.com/Azure/azure-powershell/issues/13337
+if (!(([string]::IsNullOrEmpty((get-module -name Az.Accounts -listavailable)))))
+{
+    if ((get-module -name Az.Accounts -listavailable).Version.ToString() -lt "2.2.5") 
+    {
+        update-module Az -Scope User -RequiredVersion 5.5 -MaximumVersion 5.5 -force -ErrorAction SilentlyContinue
+    }
+}
+else
+{
+    install-module Az -Scope User -RequiredVersion 5.5 -MaximumVersion 5.5 -force -ErrorAction SilentlyContinue
+}
+
+
+# Uri
+$Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess))
 # settings of the temporary virtual machine
 # -----------------------------------------
 $VMSize="Standard_E4s_v3" # This default virtual machine size offering includes a d: drive with 60GB non-persistent capacity
@@ -128,30 +279,53 @@ $marketplacetermsname= $skuName
 # Get-AzVMImage -Location switzerlandnorth -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2019-datacenter-with-containers-smalldisk-g2
 $productversion = "17763.1039.2002091844"
 
-#admin role
-$myWindowsPrincipal=new-object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())
-$AdminRole=($myWindowsPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
-# Uri
-$Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess))
 
-# check Azure CLI
-if (-not ($($env:path).contains("CLI2\wbin")))
+if ([string]::IsNullOrEmpty($azclilogin))
 {
-    if (!($AdminRole))
-    {
-        write-host "Administrative privileges required."
-        break
-    }
-    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi; Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
-    $env:path="C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+    $azclilogin=az login --use-device-code
 }
 
-# check Azure Powershell
-if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-module Az -force -ErrorAction SilentlyContinue}
+if (!([string]::IsNullOrEmpty($azclilogin)))
+{
+    # TODO
+}
+else
+{
+    write-host "Azure CLI login required."
+    exit
+}
 
-# Azure Login
-$azcontext=connect-Azaccount -cred $cred
-if (-not $($azcontext)) {break}
+
+
+if ([string]::IsNullOrEmpty($azconnect))
+{
+    $azconnect=connect-azaccount -devicecode
+}
+
+$AzContext = Get-AzContext
+if (!([string]::IsNullOrEmpty($azcontext)))
+{
+    $ArmToken = [Microsoft.Azure.Commands.Common.Authentication.AzureSession]::Instance.AuthenticationFactory.Authenticate(
+    $AzContext.'Account',
+    $AzContext.'Environment',
+    $AzContext.'Tenant'.'Id',
+    $null,
+    [Microsoft.Azure.Commands.Common.Authentication.ShowDialog]::Never,
+    $null,
+    'https://management.azure.com/'
+    )
+    $tenantId = ($AzContext).Tenant.Id
+    $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.core.windows.net/" -TenantId $tenantId).Token
+
+    # TODO
+}
+else
+{
+    write-host "Azure Powershell connect required."
+    exit
+}
+
+
 # save credentials
 $contextfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
 Save-AzContext -Path $contextfile -Force
@@ -164,23 +338,125 @@ az account set --subscription $subscriptionId
 $Scriptrun=
 @'
 
-# check Azure Powershell
-if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-module Az -force -ErrorAction SilentlyContinue}
+$RootDrive=(get-item $tmppath).Root.Name
+$tmpfilename=split-path -path $Uri -Leaf
+$tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
+$vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname
+$downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
+$IsVhdUploaded=$env:public + "\VhdUploaded.txt"
 
-# check Azure CLI
-if (-not ($($env:path).contains("CLI2\wbin")))
+# In LocalSystem context there is no possibility to connect outside. Hence, the following snippet runs a schedule task once with impersonation to user VMLocalAdminUser.
+if ($env:username -ine $VMLocalAdminUser)
 {
-    if ($IsWindows -or $ENV:OS)
+    $filetostart=$MyInvocation.MyCommand.Source
+    $LocalUser=$env:computername + "\" + $VMLocalAdminUser
+
+    $Identifier="123"
+	$PowershellFilePath =  "$PsHome\powershell.exe"
+    $Taskname = "ScheduledPhotonProcessing" + $Identifier
+	$Argument = "\"""+$PowershellFilePath +"\"" -WindowStyle Hidden -NoLogo -NoProfile -Executionpolicy unrestricted -command \"""+$filetostart+"\"""
+
+    $begintime = "00:0" + (get-random -count 1 -inputobject (0..9))[0]
+    # https://stackoverflow.com/questions/6939548/a-workaround-for-the-fact-that-a-scheduled-task-in-windows-requires-a-user-to-be/6982193
+    $rc=${VMLocalAdminPwd} | schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2018" /ST $begintime /RU ${LocalUser} /RL HIGHEST
+    $rc | out-file -filepath c:\users\public\outp.txt -append
+    if ($rc -eq $null) {exit}
+
+    $tmpxmlfile=$tmppath+"\xml"+ $Identifier+".xml"
+    $rcInner=$null
+    try
     {
-        if (test-path AzureCLI.msi) {remove-item -path AzureCLI.msi -force}
-        Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi; Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
-        $env:path="C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+        schtasks /query /XML /tn "$Taskname" >"$tmpxmlfile"
+        schtasks /delete /TN "$Taskname" /F
+        (get-content ("$tmpxmlfile")).replace('<LogonType>InteractiveToken</LogonType>','<LogonType>Password</LogonType>') |set-content "$tmpxmlfile"
+        (get-content ("$tmpxmlfile")).replace('<ExecutionTimeLimit>PT72H</ExecutionTimeLimit>','<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>') |set-content "$tmpxmlfile"
+
+        $rcInner=${VMLocalAdminPwd} | schtasks.exe /create /f /tn "$Taskname" /RU ${LocalUser} /XML "$tmpxmlfile"
+        $VMLocalAdminPwd | out-file -filepath c:\users\public\outp.txt -append
+        $rcInner | out-file -filepath c:\users\public\outp.txt -append
+        # if (test-path(${tmpxmlfile})) {remove-item -Path ${tmpxmlfile}}
+    }
+    catch{}
+    if ($rcInner -ne $null)
+    {
+        # Scheduled task run with photon download & unzip takes time. Set timeout value to 1 hour.
+        $timeout=3600
+
+        start-sleep -s 1
+        schtasks /Run /TN "$Taskname" /I	
+        $i=0
+        do
+        {
+            start-sleep -m 1000
+            $i++
+        }
+        until ((test-path(${IsVhdUploaded})) -or ($i -gt $timeout))
+
+        schtasks /End /TN "$Taskname"
+        start-sleep -s 1
+        schtasks /delete /TN "$Taskname" /F
+    }
+    exit
+}
+
+# check Azure CLI user install
+if (test-path("$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"))
+{
+    $Remove = "$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"
+    $env:Path = ($env:Path.Split(';') | Where-Object -FilterScript {$_ -ne $Remove}) -join ';'
+    $env:path="$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+}
+
+$version=""
+try
+{
+    $version=az --version 2>$null
+    $version=(($version | select-string "azure-cli")[0].ToString().Replace(" ","")).Replace("azure-cli","")
+}
+catch {}
+
+# Update was introduced in 2.11.0, see https://docs.microsoft.com/en-us/cli/azure/update-azure-cli
+if (($version -eq "") -or ($version -lt "2.11.0"))
+{
+    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi
+    Start-Process msiexec.exe -Wait -ArgumentList "/a AzureCLI.msi /qb TARGETDIR=$env:APPDATA\azure-cli /quiet"
+    if (!(test-path("$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin")))
+    {
+        throw "Azure CLI installation failed."
+        exit
     }
     else
     {
-        curl -L https://aka.ms/InstallAzureCli | bash
+        $Remove = "$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"
+        $env:Path = ($env:Path.Split(';') | Where-Object -FilterScript {$_ -ne $Remove}) -join ';'
+        $env:path="$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+
+        $version=az --version 2>$null
+        $version=(($version | select-string "azure-cli")[0].ToString().Replace(" ","")).Replace("azure-cli","")
+    }
+    if (test-path(.\AzureCLI.msi)) {rm .\AzureCLI.msi}
+}
+if ($version -lt "2.19.1")
+{
+    az upgrade --yes --all 2>&1 | out-null
+}
+
+
+# check Azure Powershell
+# https://github.com/Azure/azure-powershell/issues/13530
+# https://github.com/Azure/azure-powershell/issues/13337
+if (!(([string]::IsNullOrEmpty((get-module -name Az.Accounts -listavailable)))))
+{
+    if ((get-module -name Az.Accounts -listavailable).Version.ToString() -lt "2.2.5") 
+    {
+        update-module Az -Scope User -RequiredVersion 5.5 -MaximumVersion 5.5 -force -ErrorAction SilentlyContinue
     }
 }
+else
+{
+    install-module Az -Scope User -RequiredVersion 5.5 -MaximumVersion 5.5 -force -ErrorAction SilentlyContinue
+}
+
 
 $orgfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
 $fileencoded=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext_encoded.txt"
@@ -197,15 +473,6 @@ if ((test-path($fileencoded)) -eq $false)
     }
 }
 
-$RootDrive=(get-item $tmppath).Root.Name
-
-$tmpfilename=split-path -path $Uri -Leaf
-$tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
-
-$vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname
-$downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
-
-
 if (Test-Path -d $tmppath)
 {
     if (!(Test-Path $downloadfile))
@@ -217,16 +484,21 @@ if (Test-Path -d $tmppath)
         {
             if (!(Test-Path $vhdfile))
             {
-                Invoke-WebRequest $Uri -OutFile $tmpfilename
+                # Invoke-WebRequest $Uri -OutFile $tmpfilename
+                c:\windows\system32\curl.exe -J -O -L $Uri
             }
             if ((Test-Path $downloadfile) -and ((([IO.Path]::GetExtension($tmpfilename)) -ieq ".gz")))
             {
-                tar -xzvf $downloadfile
-                if ($LASTEXITCODE -ne 0)
+                try
                 {
-                    install-module PS7Zip -force
-                    Expand-7Zip -FullName $downloadfile -destinationpath $tmppath
+                    c:\windows\system32\tar.exe -xzvf $downloadfile
+                    if ((!(Test-Path $vhdfile)) -and ($LASTEXITCODE -eq 0))
+                    {
+                        install-module PS7Zip -force
+                        Expand-7Zip -FullName $downloadfile -destinationpath $tmppath
+                    }
                 }
+                catch{}
             }
         }
     }
@@ -253,12 +525,13 @@ if (Test-Path $vhdfile)
 					if ($result.exists -eq $false)
 					{
 						try {
-						az storage blob upload --account-name $StorageAccountName `
-						--account-key ($storageaccountkey[0]).value `
-						--container-name ${ContainerName} `
-						--type page `
-						--file $vhdfile `
-						--name ${BlobName}
+						    az storage blob upload --account-name $StorageAccountName `
+						    --account-key ($storageaccountkey[0]).value `
+						    --container-name ${ContainerName} `
+						    --type page `
+						    --file $vhdfile `
+						    --name ${BlobName}
+                            $vhdfile | out-file -filepath $IsVhdUploaded -append
 						} catch{}
 					}			
 				}
@@ -289,7 +562,7 @@ if ( -not $($storageaccount))
 do {sleep -Milliseconds 1000} until ($((get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName).ProvisioningState) -ieq "Succeeded") 
 $storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
 
-$result=az storage container exists --account-name $storageaccountname --name ${ContainerName} | convertfrom-json
+$result=az storage container exists --account-name $storageaccountname --name ${ContainerName} --auth-mode login | convertfrom-json
 if ($result.exists -eq $false)
 {
 	az storage container create --name ${ContainerName} --public-access blob --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value
@@ -389,7 +662,10 @@ if (-not $($Disk))
 		$tmp='$Location="'+$Location+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$StorageAccountName="'+$StorageAccountName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$ContainerName="'+$ContainerName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+		$tmp='$VMLocalAdminUser="'+$VMLocalAdminUser+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+		$tmp='$VMLocalAdminPwd="'+$VMLocalAdminPwd+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		out-file -inputobject $ScriptRun -FilePath $ScriptFile -Encoding ASCII -append
+
 		remove-item -path ($contextfileEncoded) -force
 
 		# Remote import azcontext and process blob upload from scriptfile
