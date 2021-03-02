@@ -1,22 +1,46 @@
-﻿#
-# The script provisions an Azure virtual machine from a user VMware Photon OS Azure image.
+﻿# .SYNOPSIS
+#  The script provisions an Azure virtual machine from a user VMware Photon OS Azure image.
 #
-# 
-# See create-AzImage-PhotonOS.ps1 for user VMware Photon OS Azure image creation.
+# .DESCRIPTION
+#  Actually there are no official Azure marketplace images of VMware Photon OS. You can create one using the official .vhd file of a specific VMware Photon OS build, or
+#  you can use the Azure Virtual Machine Image builder script create-AzImage-PhotonOS.ps1 to create an Azure image.
+#  This script does a device login on Azure, and uses the specified location and resource group of the Azure image and provisions a virtual machine. Default Azure VM size is Standard_B1ms.
+#  
+#  With the start it does twice trigger an Azure login using the device code method.
+#  
+#      az : WARNING: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
+#      In Zeile:1 Zeichen:13
+#      + $azclilogin=az login --use-device-code
+#          +             ~~~~~~~~~~~~~~~~~~~~~~~~~~
+#          + CategoryInfo          : NotSpecified: (WARNING: To sig...o authenticate.:String) [], RemoteException
+#          + FullyQualifiedErrorId : NativeCommandError
 #
-# History
+#    WARNUNG: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
+#
+#  The Azure CLI and Azure Powershell output shows up as warning (see above).
+#  You will have to open a webbrowser, and fill in the code given by the Azure Powershell login output and by the Azure CLI login output.
+#
+#
+#  The script hasn't been optimized in lack of issue findings. It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings, especially:
+#  "WARNUNG: System.ArgumentException: Argument passed in is not serializable." + appendings like "Microsoft.WindowsAzure.Commands.Common.MetricHelper"
+#  "az : WARNING: There are no credentials provided in your command and environment, we will query for the account key inside your storage account."
+#
+#  .PREREQUISITES
+#    - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
+#    - Azure account with Virtual Machine contributor role
+#
+# .NOTES
 # 0.1   16.02.2020   dcasota  First release
 # 0.2   23.04.2020   dcasota  adopted params to create-AzImage-PhotonOS.ps1
 # 0.3   12.05.2020   dcasota  bugfix retrieving storageaccountkey
 # 0.4   19.09.2020   dcasota  differentiation between image resourcegroup and vm resourcegroup
+# 0.5   02.03.2021   dcasota  switched to device code login
 #
 #
-# Prerequisites:
-#    - Microsoft Powershell, Microsoft Azure Powershell
-#    - Azure account
-#
-# .PARAMETER cred
-#   Azure login credential
+# .PARAMETER azconnect
+#   Azure powershell devicecode login
+# .PARAMETER azclilogin
+#   Azure CLI devicecode login
 # Parameter VMName
 #    Name of the virtual machine to be created
 # Parameter LocationName
@@ -57,14 +81,16 @@
 #    virtual machine public IP DNS name
 #
 # .EXAMPLE
-#    ./create-AzVM_FromImage-PhotonOS.ps1 -cred $(Get-credential -message 'Enter a username and password for Azure login.') -Location switzerlandnorth -ResourceGroupNameImage photonoslab-rg -ImageName photon-azure-3.0-9355405.vhd -ResourceGroupName photonoslab -StorageAccountName photonoslabstorage  -VMName PhotonOS3.0rev2
+#    ./create-AzVM_FromImage-PhotonOS.ps1 -Location switzerlandnorth -ResourceGroupNameImage photonoslab -ImageName photon-azure-4.0-1526e30ba_V2.vhd -ResourceGroupName ph4lab -VMName Ph4
 
 [CmdletBinding()]
 param(
 [Parameter(Mandatory = $false)]
 [ValidateNotNull()]
-[System.Management.Automation.PSCredential]
-[System.Management.Automation.Credential()]$cred = (Get-credential -message 'Enter a username and password for the Azure login.'),
+[string]$azconnect,
+[Parameter(Mandatory = $false)]
+[ValidateNotNull()]
+[string]$azclilogin,
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [ValidateSet('eastasia','southeastasia','centralus','eastus','eastus2','westus','northcentralus','southcentralus',`
@@ -83,8 +109,8 @@ param(
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [string]$ResourceGroupName,
 
-[Parameter(Mandatory = $true)][ValidateNotNull()][ValidateNotNull()][ValidateLength(3,24)][ValidatePattern("[a-z0-9]")]
-[string]$StorageAccountName,
+[Parameter(Mandatory = $false)][ValidateNotNull()][ValidateNotNull()][ValidateLength(3,24)][ValidatePattern("[a-z0-9]")]
+[string]$StorageAccountName=$ResourceGroupName.ToLower()+"storage",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$ContainerName = "disks",
@@ -117,36 +143,160 @@ $VMSize = "Standard_B1ms",
 [string]$PublicIPDNSName="publicdns"+$VMName,
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-[string]$VMLocalAdminUser = "LocalAdminUser",
+[string]$VMLocalAdminUser = "Local",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-[string]$VMLocalAdminPwd="Secure2020123!" #12-123 chars
+[string]$VMLocalAdminPwd="Secure2020123." #12-123 chars
 )
 
-#admin role
-$myWindowsPrincipal=new-object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())
-$AdminRole=($myWindowsPrincipal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator))
 
-# check Azure CLI
-if (-not ($($env:path).contains("CLI2\wbin")))
+# https://github.com/Azure/azure-powershell/blob/master/documentation/breaking-changes/breaking-changes-messages-help.md
+Set-Item Env:\SuppressAzurePowerShellBreakingChangeWarnings "true"
+
+# Check Windows Powershell environment. Original codesnippet parts from https://www.powershellgallery.com/packages/Az.Accounts/2.2.5/Content/Az.Accounts.psm1
+$PSDefaultParameterValues.Clear()
+Set-StrictMode -Version Latest
+
+function Test-DotNet
 {
-    if (!($AdminRole))
+    try
     {
-        write-host "Administrative privileges required."
-        break
+        if ((Get-PSDrive 'HKLM' -ErrorAction Ignore) -and (-not (Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full\' -ErrorAction Stop | Get-ItemPropertyValue -ErrorAction Stop -Name Release | Where-Object { $_ -ge 461808 })))
+        {
+            throw ".NET Framework versions lower than 4.7.2 are not supported in Az. Please upgrade to .NET Framework 4.7.2 or higher."
+            exit
+        }
     }
-    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi; Start-Process msiexec.exe -Wait -ArgumentList '/I AzureCLI.msi /quiet'
-    $env:path="C:\Program Files (x86)\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+    catch [System.Management.Automation.DriveNotFoundException]
+    {
+        Write-Verbose ".NET Framework version check failed."
+        exit
+    }
 }
 
+if ($true -and ($PSEdition -eq 'Desktop'))
+{
+    if ($PSVersionTable.PSVersion -lt [Version]'5.1')
+    {
+        throw "PowerShell versions lower than 5.1 are not supported in Az. Please upgrade to PowerShell 5.1 or higher."
+        exit
+    }
+    Test-DotNet
+}
+
+if ($true -and ($PSEdition -eq 'Core'))
+{
+    if ($PSVersionTable.PSVersion -lt [Version]'6.2.4')
+    {
+        throw "Current Az version doesn't support PowerShell Core versions lower than 6.2.4. Please upgrade to PowerShell Core 6.2.4 or higher."
+        exit
+    }
+}
+
+# check Azure CLI user install
+if (test-path("$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"))
+{
+    $Remove = "$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"
+    $env:Path = ($env:Path.Split(';') | Where-Object -FilterScript {$_ -ne $Remove}) -join ';'
+    $env:path="$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+}
+
+$version=""
+try
+{
+    $version=az --version 2>$null
+    $version=(($version | select-string "azure-cli")[0].ToString().Replace(" ","")).Replace("azure-cli","")
+}
+catch {}
+
+# Update was introduced in 2.11.0, see https://docs.microsoft.com/en-us/cli/azure/update-azure-cli
+if (($version -eq "") -or ($version -lt "2.11.0"))
+{
+    Invoke-WebRequest -Uri https://aka.ms/installazurecliwindows -OutFile .\AzureCLI.msi
+    Start-Process msiexec.exe -Wait -ArgumentList "/a AzureCLI.msi /qb TARGETDIR=$env:APPDATA\azure-cli /quiet"
+    if (!(test-path("$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin")))
+    {
+        throw "Azure CLI installation failed."
+        exit
+    }
+    else
+    {
+        $Remove = "$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin"
+        $env:Path = ($env:Path.Split(';') | Where-Object -FilterScript {$_ -ne $Remove}) -join ';'
+        $env:path="$env:APPDATA\azure-cli\Microsoft SDKs\Azure\CLI2\wbin;"+$env:path
+
+        $version=az --version 2>$null
+        $version=(($version | select-string "azure-cli")[0].ToString().Replace(" ","")).Replace("azure-cli","")
+    }
+    if (test-path(.\AzureCLI.msi)) {rm .\AzureCLI.msi}
+}
+if ($version -lt "2.19.1")
+{
+    az upgrade --yes --all 2>&1 | out-null
+}
+
+
 # check Azure Powershell
-if (([string]::IsNullOrEmpty((get-module -name Az* -listavailable)))) {install-module Az -force -ErrorAction SilentlyContinue}
+# https://github.com/Azure/azure-powershell/issues/13530
+# https://github.com/Azure/azure-powershell/issues/13337
+if (!(([string]::IsNullOrEmpty((get-module -name Az.Accounts -listavailable)))))
+{
+    if ((get-module -name Az.Accounts -listavailable).Version.ToString() -lt "2.2.5") 
+    {
+        update-module Az -Scope User -RequiredVersion 5.5 -MaximumVersion 5.5 -force -ErrorAction SilentlyContinue
+    }
+}
+else
+{
+    install-module Az -Scope User -RequiredVersion 5.5 -MaximumVersion 5.5 -force -ErrorAction SilentlyContinue
+}
 
-# Azure Login
-$azcontext=connect-Azaccount -Credential $cred
-if (-not $($azcontext)) {break}
 
-#Set the context to the subscription Id where Managed Disk exists and where VM will be created
+if ([string]::IsNullOrEmpty($azclilogin))
+{
+    $azclilogin=az login --use-device-code
+}
+
+if (!([string]::IsNullOrEmpty($azclilogin)))
+{
+    # TODO
+}
+else
+{
+    write-host "Azure CLI login required."
+    exit
+}
+
+
+if ([string]::IsNullOrEmpty($azconnect))
+{
+    $azconnect=connect-azaccount -devicecode
+}
+
+$AzContext = Get-AzContext
+if (!([string]::IsNullOrEmpty($azcontext)))
+{
+    $ArmToken = [Microsoft.Azure.Commands.Common.Authentication.AzureSession]::Instance.AuthenticationFactory.Authenticate(
+    $AzContext.'Account',
+    $AzContext.'Environment',
+    $AzContext.'Tenant'.'Id',
+    $null,
+    [Microsoft.Azure.Commands.Common.Authentication.ShowDialog]::Never,
+    $null,
+    'https://management.azure.com/'
+    )
+    $tenantId = ($AzContext).Tenant.Id
+    $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.core.windows.net/" -TenantId $tenantId).Token
+
+    # TODO
+}
+else
+{
+    write-host "Azure Powershell connect required."
+    exit
+}
+
+#Set the context to the subscription Id where the Azure image exists and where the virtual machine will be created
 $subscriptionId=(get-azcontext).Subscription.Id
 # set subscription
 az account set --subscription $subscriptionId

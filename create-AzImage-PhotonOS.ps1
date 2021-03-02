@@ -17,7 +17,7 @@
 #       Photon OS 2.0 RC Azure VHD - gz file:            https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz
 #       Photon OS 2.0 Beta Azure VHD:                    https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd
 #
-#  To simply the process, this Azure Virtual Machine Image builder script does a device login on Azure, and uses the specified location and resource group to create an Azure image.
+#  To simplify the process this Azure Virtual Machine Image builder script does a device login on Azure, and uses the specified location and resource group to create an Azure image.
 #  Actually, without specifying the VMware Photon OS build, it creates an Photon OS 4.0 GA Azure image.
 #
 #  
@@ -52,7 +52,7 @@
 #
 #  .PREREQUISITES
 #    - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
-#    - Azure account with  Virtual Machine contributor role
+#    - Azure account with Virtual Machine contributor role
 #
 #
 # .NOTES
@@ -67,6 +67,7 @@
 #   0.7   18.11.2020   dcasota  Photon OS 4.0 Beta Azure Vhd added
 #   0.8   29.11.2020   dcasota  fix login issue https://github.com/Azure/azure-powershell/issues/13337
 #   0.9   01.03.2021   dcasota  download URLs updated. Scheduled runas as localadminuser fixed.
+#   0.91  02.03.2021   dcasota  comment fix
 #
 # .PARAMETER azconnect
 #   Azure powershell devicecode login
