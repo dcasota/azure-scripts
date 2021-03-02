@@ -359,7 +359,7 @@ if ($env:username -ine $VMLocalAdminUser)
 
     $begintime = "00:0" + (get-random -count 1 -inputobject (0..9))[0]
     # https://stackoverflow.com/questions/6939548/a-workaround-for-the-fact-that-a-scheduled-task-in-windows-requires-a-user-to-be/6982193
-    $rc=${VMLocalAdminPwd} | schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2018" /ST $begintime /RU ${LocalUser} /RL HIGHEST
+    $rc=schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2018" /ST $begintime /RU ${LocalUser} /RP ${VMLocalAdminPwd} /RL HIGHEST
     $rc | out-file -filepath c:\users\public\outp.txt -append
     if ($rc -eq $null) {exit}
 
@@ -372,7 +372,7 @@ if ($env:username -ine $VMLocalAdminUser)
         (get-content ("$tmpxmlfile")).replace('<LogonType>InteractiveToken</LogonType>','<LogonType>Password</LogonType>') |set-content "$tmpxmlfile"
         (get-content ("$tmpxmlfile")).replace('<ExecutionTimeLimit>PT72H</ExecutionTimeLimit>','<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>') |set-content "$tmpxmlfile"
 
-        $rcInner=${VMLocalAdminPwd} | schtasks.exe /create /f /tn "$Taskname" /RU ${LocalUser} /XML "$tmpxmlfile"
+        $rcInner=schtasks.exe /create /f /tn "$Taskname" /RU ${LocalUser} /RP ${VMLocalAdminPwd} /XML "$tmpxmlfile"
         $VMLocalAdminPwd | out-file -filepath c:\users\public\outp.txt -append
         $rcInner | out-file -filepath c:\users\public\outp.txt -append
         # if (test-path(${tmpxmlfile})) {remove-item -Path ${tmpxmlfile}}
