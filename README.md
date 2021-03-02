@@ -59,19 +59,17 @@ On Azure, VMs with UEFI boot type are not supported yet. However some downgrade 
 - https://docs.vmware.com/en/VMware-vSphere/6.7/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
 
 
-# Azure scripts Linux virtual machine related
+
+## Archive
+```create-AzImage_GenV2-PhotonOS.ps1``` creates an Azure Generation V2 image of VMware Photon OS. This script is deprecated. Use ```create-AzImage-PhotonOS.ps1```.
+
 ```Ubuntu18.04-Install.ps1```
 Deploys the Azure template Canonical Ubuntu 18.04 Server.
 
 ```create-AzVMNodeRed_FromImage-PhotonOS.ps1```
 Deploys a VMware Photon OS VM with installed Siemens MindConnect Node-Red editor.
 Example provisioning: ```.\create-AzVMNodeRed_FromImage-PhotonOS.ps1 -LocationName switzerlandnorth -ResourceGroupName photonoslab-rg -StorageAccountName photonoslab -ImageName photon-azure-3.0-9355405.vhd -ContainerName disks -VMName nodered1 -VMSize Standard_B1ms```
-
 Requirements: Azure image of VMware Photon OS (see first chapter).
-
-# Azure scripts  Microsoft Windows Server virtual machine related
-
-You find in this repo some Azure study scripts easily to deploy a Windows or Linux server on Azure.
 
 ```W2K19-Install.ps1```
 Deploys the Azure template Windows Server 2019 Datacenter. You can mark the line beginning with ```Set-AzVMCustomScriptExtension``` as comment (#). If uncommented, after the setup, it launches the ```MonoOnW2K19-install.ps1```.
@@ -81,6 +79,3 @@ Deploys the Azure template Windows Server 2019 Datacenter HyperV-Generation V2.
 
 ```MSSQL14onW2K12R2-Install.ps1```
 Deploys the Azure template Microsoft SQL Server 2014 on a Windows Server 2012 R2.
-
-## Archive
-```create-AzImage_GenV2-PhotonOS.ps1``` creates an Azure Generation V2 image of VMware Photon OS. This script is deprecated. Use ```create-AzImage-PhotonOS.ps1```.
