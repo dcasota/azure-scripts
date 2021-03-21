@@ -1,6 +1,6 @@
 # Azure scripts VMware Photon OS virtual machine related
 
-Actually there are no official Azure marketplace VM images of VMware Photon OS. In situations where you need simply need a container, better have a look to https://hub.docker.com/_/photon.
+Actually there are no official Azure marketplace VM images of VMware Photon OS. In situations where you rather need a container, better have a look to https://hub.docker.com/_/photon.
 
 From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows still is a key feature for many customers. A few classic Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
 
