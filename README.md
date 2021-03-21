@@ -6,9 +6,9 @@ From a technical feasibility perspective of a new generation of marketplace offe
 
 From a multi-cloud perspective VMware Tanzu Kubernetes Grid Plus (see [KB article](https://kb.vmware.com/s/article/78173)) engages infrastructure workflow solutions to integrate at the level of a Kubernetes Node OS.
 
-Okay, but I cannot easily register an Azure endpoint on VMware vCenter and simply push a Photon OS image from the content library to my Azure tenant. Yes, this isn't possible yet, but you can make use of Photon OS builds on Azure with limited infrastructure workflows. Have a look to https://github.com/vmware/photon/wiki/Downloading-Photon-OS. You will find for most releases the appropriate Azure VHD file.
+Okay, but I cannot easily register an Azure endpoint on VMware vCenter and simply schedule pushes of a Photon OS custom build from the content library to my Azure tenant. Yes, this isn't possible yet, but you already can make use of Photon OS releases on Azure. Have a look to https://github.com/vmware/photon/wiki/Downloading-Photon-OS. You will find for most releases the appropriate Azure VHD file.
 In addition,
-- You can create Photon OS images with [Packer on Azure] (https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer).
+- You can customize Photon OS images with [Packer on Azure] (https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer).
 - There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
 - In situations where must-functions in Packer and/or Azure Image Builder are not available yet, but available using Azure Powershell+CLI, it has been an affordable way to adopt a Scripted Azure image creation method. It uses a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build. Actually, this repo shares findings specifically on provisioning VMware Photon OS on Azure using Scripted Azure image creation.
 
