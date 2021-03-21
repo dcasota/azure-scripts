@@ -68,6 +68,7 @@
 #   0.8   29.11.2020   dcasota  fix login issue https://github.com/Azure/azure-powershell/issues/13337
 #   0.9   01.03.2021   dcasota  download URLs updated. Scheduled runas as localadminuser fixed.
 #   0.91  02.03.2021   dcasota  comment fix
+#   0.92  21.03.2021   dcasota  bugfix photon 2.0 processing
 #
 # .PARAMETER azconnect
 #   Azure powershell devicecode login
@@ -93,7 +94,7 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -SoftwareToProcess "https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz" -ResourceGroupName photonoslab -Location switzerlandnorth
+#    ./create-AzImage-PhotonOS.ps1 -SoftwareToProcess "https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab -Location switzerlandnorth
 #
 
 [CmdletBinding()]
@@ -125,7 +126,7 @@ param(
 'northeurope','westeurope','japanwest','japaneast','brazilsouth','australiaeast','australiasoutheast',`
 'southindia','centralindia','westindia','canadacentral','canadaeast','uksouth','ukwest','westcentralus','westus2',`'koreacentral','koreasouth','francecentral','francesouth','australiacentral','australiacentral2',`
 'uaecentral','uaenorth','southafricanorth','southafricawest','switzerlandnorth','switzerlandwest',`
-'germanynorth','germanywestcentral','norwaywest','norwayeast')]
+'germanynorth','germanywestcentral','norwaywest','norwayeast','brazilsoutheast','westus3')]
 [string]$Location,
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
@@ -278,7 +279,6 @@ $offerName = "WindowsServer"
 $skuName = "2019-datacenter-with-containers-smalldisk-g2"
 $marketplacetermsname= $skuName
 # Get-AzVMImage -Location switzerlandnorth -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2019-datacenter-with-containers-smalldisk-g2
-$productversion = "17763.1039.2002091844"
 
 
 if ([string]::IsNullOrEmpty($azclilogin))
@@ -493,13 +493,17 @@ if (Test-Path -d $tmppath)
                 try
                 {
                     c:\windows\system32\tar.exe -xzvf $downloadfile
-                    if ((!(Test-Path $vhdfile)) -and ($LASTEXITCODE -eq 0))
-                    {
-                        install-module PS7Zip -force
-                        Expand-7Zip -FullName $downloadfile -destinationpath $tmppath
-                    }
                 }
                 catch{}
+                if (!(Test-Path $vhdfile))
+                {
+                        # Windows tar does not extract photon-azure-2.0-304b817.vhd.gz but PS7Zip does.
+                        install-module PS7Zip -force
+                        # work directory must be path of $tmpfilename
+                        Expand-7Zip -FullName $tmpfilename -destinationpath $tmpname
+                        # vhdfile should now be unextracted into directory $tmpname
+                        $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname + [io.path]::DirectorySeparatorChar + $tmpname
+                }
             }
         }
     }
@@ -618,6 +622,8 @@ if (-not $($Disk))
 		$vmConfig = New-AzVMConfig -VMName $VMName -VMSize $VMSize | `
 		Add-AzVMNetworkInterface -Id $nic.Id
 
+        $productversion=((get-azvmimage -Location $Location -PublisherName $publisherName -Offer $offerName -Skus $skuName)[(get-azvmimage -Location $Location -PublisherName $publisherName -Offer $offerName -Skus $skuName).count -1 ]).version
+
 		$vmimage= get-azvmimage -Location $Location -PublisherName $publisherName -Offer $offerName -Skus $skuName -Version $productversion
 		if (-not ([Object]::ReferenceEquals($vmimage,$null)))
 		{
@@ -638,8 +644,9 @@ if (-not $($Disk))
 		}
 	}
 
+    $objBlob=get-azstorageblob -Container $ContainerName -Blob $BlobName -Context $storageaccount.Context
 	$objVM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $vmName -status -ErrorAction SilentlyContinue
-	if (-not ([Object]::ReferenceEquals($objVM,$null)))
+	if ((-not ([Object]::ReferenceEquals($objVM,$null))) -and (!($objBlob)))
 	{
 		# First remote install Az Module
 		az vm extension set --publisher Microsoft.Compute --version 1.8 --name "CustomScriptExtension" --vm-name $vmName --resource-group $ResourceGroupName --settings "{'commandToExecute':'powershell.exe Install-module Az -force -ErrorAction SilentlyContinue'}"

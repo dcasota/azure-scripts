@@ -35,6 +35,7 @@
 # 0.3   12.05.2020   dcasota  bugfix retrieving storageaccountkey
 # 0.4   19.09.2020   dcasota  differentiation between image resourcegroup and vm resourcegroup
 # 0.5   02.03.2021   dcasota  switched to device code login
+# 0.51  21.03.2021   dcasota  List available Azure locations updated
 #
 #
 # .PARAMETER azconnect
@@ -95,9 +96,10 @@ param(
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [ValidateSet('eastasia','southeastasia','centralus','eastus','eastus2','westus','northcentralus','southcentralus',`
 'northeurope','westeurope','japanwest','japaneast','brazilsouth','australiaeast','australiasoutheast',`
-'southindia','centralindia','westindia','canadacentral','canadaeast','uksouth','ukwest','westcentralus','westus2',`'koreacentral','koreasouth','francecentral','francesouth','australiacentral','australiacentral2',`
+'southindia','centralindia','westindia','canadacentral','canadaeast','uksouth','ukwest','westcentralus','westus2',`
+'koreacentral','koreasouth','francecentral','francesouth','australiacentral','australiacentral2',`
 'uaecentral','uaenorth','southafricanorth','southafricawest','switzerlandnorth','switzerlandwest',`
-'germanynorth','germanywestcentral','norwaywest','norwayeast')]
+'germanynorth','germanywestcentral','norwaywest','norwayeast','brazilsoutheast','westus3')]
 [string]$LocationName,
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
