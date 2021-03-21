@@ -1,10 +1,23 @@
 # Azure scripts VMware Photon OS virtual machine related
 
-Actually there are no official Azure marketplace images of VMware Photon OS. You can create one using the official .vhd file of a specific VMware Photon OS build.
-To simplify the process this repo contains two helper scripts.
+Actually there are no official Azure marketplace VM images of VMware Photon OS. In situations where you need simply need a container, better have a look to https://hub.docker.com/_/photon.
+
+From a technical feasibility perspective of a new generation of marketplace offerings is a time-limited hosting of OS releases and good practices of immutable infrastructure workflows. A few classic Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings helps to simplify their hybrid cloud infrastructure management. Here's a good starting point on [managing Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
+
+VMware Tanzu Kubernetes Grid Plus (see [KB article](https://kb.vmware.com/s/article/78173)) enables customers to integrate Azure datacenters at the level of Kubernetes Node OS. First, how to create Photon OS images on Azure? This repo assembles some findings.
+
+- There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
+- You can create Photon OS images with [Packer on Azure] (https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer).
+- In situations where must-functions in Packer and/or Azure Image Builder are not available yet, but available using Azure Powershell+CLI, you can adopt a Scripted Azure image creation method based on a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build.
+
+![VMware Photon OS Azure Images](https://github.com/dcasota/azure-scripts/blob/master/VMware-Photon-OS-Azure-Images.png)
+
+
+# Scripted Azure image creation
+This repo contains two Azure Powershell+CLI helper scripts for a Photon OS Azure image creation.
 
 ```create-AzImage-PhotonOS.ps1```
-The script creates an Azure image of a VMware Photon OS release for Azure.
+The script creates an Azure image of a VMware Photon OS release for Azure. It uses the VHD file url of a VMware Photon OS build.
 
 ```create-AzVM_FromImage-PhotonOS.ps1```
 The script creates an Azure VM from an individual VMware Photon OS Azure Image.
