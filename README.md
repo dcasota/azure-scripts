@@ -67,11 +67,13 @@ It finishes with enabling the Azure boot-diagnostics option.
 When to use Azure Generation V2 virtual machine?
 For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
 The same begins for cloud virtual hardware like in Azure Generations.
-On Azure, VMs with UEFI boot type are not supported yet. However some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
+On Azure, VMs with UEFI boot type support are somewhat limited yet (see docs about trusted launch). However some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
 
  Some docs artefacts about
 - https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2#features-and-capabilities
+- https://docs.microsoft.com/en-us/azure/virtual-machines/trusted-launch
 - https://docs.vmware.com/en/VMware-vSphere/6.7/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
+- https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
 
 
 
