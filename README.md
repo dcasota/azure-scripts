@@ -2,13 +2,13 @@
 
 Actually there are no official Azure marketplace VM images of VMware Photon OS. In situations where you need simply need a container, better have a look to https://hub.docker.com/_/photon.
 
-From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows is still a key feature for many customers. A few classic Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings helps to simplify their hybrid cloud infrastructure management. Here's a good starting point on [managing Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
+From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows still is a key feature for many customers. A few classic Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
 
-VMware Tanzu Kubernetes Grid Plus (see [KB article](https://kb.vmware.com/s/article/78173)) enables customers to integrate Azure datacenters at the level of Kubernetes Node OS. First, how to create Photon OS images on Azure? This repo assembles some findings.
-
-- There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
+From a multi-cloud perspective VMware Tanzu Kubernetes Grid Plus (see [KB article](https://kb.vmware.com/s/article/78173)) engages infrastructure workflow solutions to integrate Azure datacenters at the level of a Kubernetes Node OS. Okay, but I cannot easily register an Azure endpoint on VMware vCenter and simply push a Photon OS image from the content libray to my Azure tenant. Yes, this isn't possible yet, but you can make use of Photon OS builds on Azure with limited infrastructure workflows. Have a look to https://github.com/vmware/photon/wiki/Downloading-Photon-OS. You will find for most releases the appropriate Azure VHD file.
+In addition,
 - You can create Photon OS images with [Packer on Azure] (https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer).
-- In situations where must-functions in Packer and/or Azure Image Builder are not available yet, but available using Azure Powershell+CLI, you can adopt a Scripted Azure image creation method based on a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build.
+- There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
+- In situations where must-functions in Packer and/or Azure Image Builder are not available yet, but available using Azure Powershell+CLI, it has been an affordable way to adopt a Scripted Azure image creation method. It uses a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build. Actually, this repo shares findings specifically on provisioning VMware Photon OS on Azure using Scripted Azure image creation.
 
 ![VMware Photon OS Azure Images](https://github.com/dcasota/azure-scripts/blob/master/VMware-Photon-OS-Azure-Images.png)
 
