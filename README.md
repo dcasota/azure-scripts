@@ -45,6 +45,17 @@ k8s-1dot20dot1-ubuntu-2004  tkg-capi vmware-inc    SwitzerlandNorth /Subscriptio
 k8s-1dot20dot4-ubuntu-1804  tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmware-inc/Arti...
 k8s-1dot20dot4-ubuntu-2004  tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmware-inc/Arti...
 ```
+
+In reference to [Tanzu Kuberneted Grid on Azure docs](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.3/vmware-tanzu-kubernetes-grid-13/GUID-mgmt-clusters-azure.html) the latest supported plan is k8s-1dot20dot4-ubuntu-2004.  
+```
+get-azvmimage -Location Switzerlandnorth -PublisherName vmware-inc -Offer tkg-capi -skus k8s-1dot20dot4-ubuntu-2004
+
+Version    Skus                       Offer    PublisherName Location         Id                                                                                                                            
+-------    ----                       -----    ------------- --------         --                                                                                                                            
+2021.02.24 k8s-1dot20dot4-ubuntu-2004 tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmwar...
+2021.03.05 k8s-1dot20dot4-ubuntu-2004 tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmwar...
+```
+
 (to be continued)
 
 # Photon OS on Azure
