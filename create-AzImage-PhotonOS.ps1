@@ -95,7 +95,7 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab -Location switzerlandnorth
+#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab -Location switzerlandnorth -HyperVGeneration V2
 #
 
 [CmdletBinding()]
