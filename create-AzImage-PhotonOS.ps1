@@ -39,13 +39,13 @@
 #  You will have to open a webbrowser, and fill in the code given by the Azure Powershell login output and by the Azure CLI login output.
 #
 #  The script first creates a temporary Azure windows virtual machine to not require to temporarily download the Photon OS bits locally.
-#  Inside the windows virtual machine customization process, the Photon release Azure .vhd file is downloaded. You can specify the Photon release download link as param value of $SoftwareToProcess.
+#  Inside the windows virtual machine customization process, the Photon release Azure .vhd file is downloaded. You can specify the Photon release download link as param value of $DownloadURL.
 #  The extracted VMware Photon OS release .vhd file is uploaded as Azure page blob, and after the Azure Photon image has been created, the temporary Windows virtual machine is deleted.
 #  The temporary virtual machine operating system is Microsoft Windows Server 2019 on a specifiable Hyper-V generation virtual hardware V1/v2 using the Azure offering Standard_E4s_v3.
 #  Azure virtual hardware generation related weblink
 #    - https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
 #
-#  The script hasn't been optimized in lack of issue findings. It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings, especially:
+#  It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings, especially:
 #  "WARNUNG: System.ArgumentException: Argument passed in is not serializable." + appendings like "Microsoft.WindowsAzure.Commands.Common.MetricHelper"
 #  "az storage blob upload --account-name" + appendings like "CategoryInfo          : NotSpecified: (:String) [], RemoteException"
 #  "No Run File has been assigned, and the Custom Script extension will try to use the first specified File Name as the Run File."
@@ -69,12 +69,13 @@
 #   0.9   01.03.2021   dcasota  download URLs updated. Scheduled runas as localadminuser fixed.
 #   0.91  02.03.2021   dcasota  comment fix
 #   0.92  21.03.2021   dcasota  bugfix photon 2.0 processing
+#   0.93  07.04.2021   dcasota  Changed naming of DownloadURL, bugfixing
 #
 # .PARAMETER azconnect
 #   Azure powershell devicecode login
 # .PARAMETER azclilogin
 #   Azure CLI devicecode login
-# .PARAMETER SoftwareToProcess
+# .PARAMETER DownloadURL
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
 # .PARAMETER Location
 #   Azure location name where to create or lookup the resource group
@@ -94,7 +95,7 @@
 #   Name of the DiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -SoftwareToProcess "https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab -Location switzerlandnorth
+#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz" -ResourceGroupName photonoslab -Location switzerlandnorth
 #
 
 [CmdletBinding()]
@@ -106,7 +107,7 @@ param(
 [ValidateNotNull()]
 [string]$azclilogin,
 
-[Parameter(Mandatory = $false)]
+[Parameter(Mandatory = $true)]
 [ValidateSet('https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz', `
 'https://packages.vmware.com/photon/4.0/RC/azure/photon-azure-4.0-a3a49f540.vhd.tar.gz', `
 'https://packages.vmware.com/photon/4.0/Beta/azure/photon-azure-4.0-d98e681.vhd.tar.gz', `
@@ -118,7 +119,7 @@ param(
 'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz', `
 'https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz', `
 'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
-[String]$SoftwareToProcess="https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz",
+[String]$DownloadURL="https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz",
 
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
@@ -141,12 +142,12 @@ param(
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$ContainerName = "disks",
 
-[Parameter(Mandatory = $false)]
+[Parameter(Mandatory = $true)]
 [ValidateSet('V1','V2')]
 [string]$HyperVGeneration="V2",
 
 [Parameter(Mandatory = $false)]
-[string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess)) -Leaf) -split ".vhd")[0] + "_" + $HyperVGeneration + ".vhd"),
+[string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL)) -Leaf) -split ".vhd")[0] + "_" + $HyperVGeneration + ".vhd"),
 
 [Parameter(Mandatory = $false)]
 [string]$DiskName="PhotonOS"
@@ -256,11 +257,11 @@ else
 
 
 # Uri
-$Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($SoftwareToProcess))
+$Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL))
 # settings of the temporary virtual machine
 # -----------------------------------------
 $VMSize="Standard_E4s_v3" # This default virtual machine size offering includes a d: drive with 60GB non-persistent capacity
-$VMSize_TempPath="d:" # $SoftwareToProcess file is downloaded and extracted on this drive. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
+$VMSize_TempPath="d:" # $DownloadURL file is downloaded and extracted on this drive. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
 # network setting
 $NetworkName = "w2k19network"
 # virtual network and subnets setting
@@ -359,8 +360,19 @@ if ($env:username -ine $VMLocalAdminUser)
 
     $begintime = "00:0" + (get-random -count 1 -inputobject (0..9))[0]
     # https://stackoverflow.com/questions/6939548/a-workaround-for-the-fact-that-a-scheduled-task-in-windows-requires-a-user-to-be/6982193
-    $rc=schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2018" /ST $begintime /RU ${LocalUser} /RP ${VMLocalAdminPwd} /RL HIGHEST
-    $rc | out-file -filepath c:\users\public\outp.txt -append
+
+    # Scheduled tasks run takes time. Set timeout value to 1 hour.
+    $timeout=3600
+
+    $i=0
+    $rc=$null
+    do
+    {
+        start-sleep -m 1000
+        $i++
+        $rc=schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2018" /ST $begintime /RU ${LocalUser} /RP ${VMLocalAdminPwd} /RL HIGHEST
+    }
+    until (($rc -ne $null) -or ($i -gt $timeout))
     if ($rc -eq $null) {exit}
 
     $tmpxmlfile=$tmppath+"\xml"+ $Identifier+".xml"
@@ -373,16 +385,11 @@ if ($env:username -ine $VMLocalAdminUser)
         (get-content ("$tmpxmlfile")).replace('<ExecutionTimeLimit>PT72H</ExecutionTimeLimit>','<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>') |set-content "$tmpxmlfile"
 
         $rcInner=schtasks.exe /create /f /tn "$Taskname" /RU ${LocalUser} /RP ${VMLocalAdminPwd} /XML "$tmpxmlfile"
-        $VMLocalAdminPwd | out-file -filepath c:\users\public\outp.txt -append
-        $rcInner | out-file -filepath c:\users\public\outp.txt -append
         # if (test-path(${tmpxmlfile})) {remove-item -Path ${tmpxmlfile}}
     }
     catch{}
     if ($rcInner -ne $null)
     {
-        # Scheduled task run with photon download & unzip takes time. Set timeout value to 1 hour.
-        $timeout=3600
-
         start-sleep -s 1
         schtasks /Run /TN "$Taskname" /I	
         $i=0
@@ -544,6 +551,7 @@ if (Test-Path $vhdfile)
 		}
 	}
 }
+shutdown.exe /r /t 0
 '@
 
 # create lab resource group if it does not exist
@@ -572,6 +580,8 @@ if ($result.exists -eq $false)
 {
 	az storage container create --name ${ContainerName} --public-access blob --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value
 }
+
+$BlobName=((split-path -path $Uri -Leaf) -split ".vhd")[0] + ".vhd"
 
 $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $DiskName)}
 if (-not $($Disk))
@@ -644,12 +654,12 @@ if (-not $($Disk))
 		}
 	}
 
-    $objBlob=get-azstorageblob -Container $ContainerName -Blob $BlobName -Context $storageaccount.Context
+    $objBlob=get-azstorageblob -Container $ContainerName -Blob $BlobName -Context $storageaccount.Context -ErrorAction SilentlyContinue
 	$objVM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $vmName -status -ErrorAction SilentlyContinue
 	if ((-not ([Object]::ReferenceEquals($objVM,$null))) -and (!($objBlob)))
 	{
 		# First remote install Az Module
-		az vm extension set --publisher Microsoft.Compute --version 1.8 --name "CustomScriptExtension" --vm-name $vmName --resource-group $ResourceGroupName --settings "{'commandToExecute':'powershell.exe Install-module Az -force -ErrorAction SilentlyContinue'}"
+		az vm extension set --publisher Microsoft.Compute --version 1.8 --name "CustomScriptExtension" --vm-name $vmName --resource-group $ResourceGroupName --settings "{'commandToExecute':'powershell.exe Install-module Az -force -ErrorAction SilentlyContinue;'}"
 		Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "CustomScriptExtension" -force
 		
 		# Prepare scriptfile
@@ -672,6 +682,10 @@ if (-not $($Disk))
 		$tmp='$ContainerName="'+$ContainerName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$VMLocalAdminUser="'+$VMLocalAdminUser+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$VMLocalAdminPwd="'+$VMLocalAdminPwd+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "AutoAdminLogon" -Value "1" -type String'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "DefaultUsername" -Value "$VMLocalAdminUser" -type String'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "DefaultPassword" -Value "$VMLocalAdminPwd" -type String'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+
 		out-file -inputobject $ScriptRun -FilePath $ScriptFile -Encoding ASCII -append
 
 		remove-item -path ($contextfileEncoded) -force
@@ -682,13 +696,14 @@ if (-not $($Disk))
 		if ($result.exists -eq $false)
 		{
 			az storage blob upload --account-name $StorageAccountName --account-key ($storageaccountkey[0]).value --container-name ${ContainerName} --type block --file $ScriptFile --name ${BlobTmp}
-			$return=Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName -Location $Location -ErrorAction SilentlyContinue `
+		}        
+		$return=Set-AzVMCustomScriptExtension -ResourceGroupName $ResourceGroupName -Location $Location -ErrorAction SilentlyContinue `
 				-VMName $vmName `
 				-Name "CustomScriptExtension" `
 				-containername $ContainerName -storageaccountname $StorageAccountName `
 				-Filename ${BlobTmp}	
-			Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "CustomScriptExtension" -force -ErrorAction SilentlyContinue
-		}
+		Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "CustomScriptExtension" -force -ErrorAction SilentlyContinue
+
 	}
 }
 
@@ -697,7 +712,6 @@ if ((test-path($contextfile))) { remove-item -path ($contextfile) -force -ErrorA
 $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $DiskName)}
 if (-not $($Disk))
 {
-    $BlobName=((split-path -path $Uri -Leaf) -split ".vhd")[0] + ".vhd"
     $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${ContainerName}/${BlobName}"
     $storageAccountId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$StorageAccountName"
     $diskConfig = New-AzDiskConfig -AccountType $StorageAccountType -Location $Location -HyperVGeneration $HyperVGeneration -CreateOption Import -StorageAccountId $storageAccountId -SourceUri $urlOfUploadedVhd
