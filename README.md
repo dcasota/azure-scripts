@@ -4,7 +4,7 @@ VMware Tanzu Kubernetes Grid (TKG) Plus (see [KB article](https://kb.vmware.com/
 
 The management cluster is the first cluster and must run on an optimized compute environment. Usually this is a VMware vSphere environment. You can deploy the management cluster (see [here](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.3/vmware-tanzu-kubernetes-grid-13/GUID-mgmt-clusters-deploy-management-clusters.html)) on
 1. your VMware vSphere environment
-2. an Azure VMware Solution (see [AVS](https://cloud.vmware.com/azure-vmware-solution)
+2. an Azure VMware Solution (see [AVS](https://cloud.vmware.com/azure-vmware-solution))
 3. Azure Hyper-V ressources
 
 Most VMware appliances' OS is Photon OS, optimized to run best on ESXi. This matches with cases one and two.
