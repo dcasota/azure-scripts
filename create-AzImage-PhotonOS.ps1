@@ -281,32 +281,32 @@ $skuName = "2019-datacenter-with-containers-smalldisk-g2"
 $marketplacetermsname= $skuName
 # Get-AzVMImage -Location switzerlandnorth -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2019-datacenter-with-containers-smalldisk-g2
 
-
-if ([string]::IsNullOrEmpty($azclilogin))
+if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
     $azclilogin=az login --use-device-code
 }
 
-if (!([string]::IsNullOrEmpty($azclilogin)))
-{
-    # TODO
-}
-else
+if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
     write-host "Azure CLI login required."
     exit
 }
 
-
-
-if ([string]::IsNullOrEmpty($azconnect))
+if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
 {
     $azconnect=connect-azaccount -devicecode
+	$AzContext=$null
 }
 
-$AzContext = Get-AzContext
-if (!([string]::IsNullOrEmpty($azcontext)))
+if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
 {
+    write-host "Azure Powershell login required."
+    exit
+}
+
+if (!(Get-variable -name AzContext -ErrorAction SilentlyContinue))
+{
+	$AzContext = Get-AzContext
     $ArmToken = [Microsoft.Azure.Commands.Common.Authentication.AzureSession]::Instance.AuthenticationFactory.Authenticate(
     $AzContext.'Account',
     $AzContext.'Environment',
@@ -318,8 +318,6 @@ if (!([string]::IsNullOrEmpty($azcontext)))
     )
     $tenantId = ($AzContext).Tenant.Id
     $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.core.windows.net/" -TenantId $tenantId).Token
-
-    # TODO
 }
 else
 {

@@ -21,7 +21,7 @@
 #  You will have to open a webbrowser, and fill in the code given by the Azure Powershell login output and by the Azure CLI login output.
 #
 #
-#  The script hasn't been optimized in lack of issue findings. It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings, especially:
+#  It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings, especially:
 #  "WARNUNG: System.ArgumentException: Argument passed in is not serializable." + appendings like "Microsoft.WindowsAzure.Commands.Common.MetricHelper"
 #  "az : WARNING: There are no credentials provided in your command and environment, we will query for the account key inside your storage account."
 #
@@ -36,6 +36,7 @@
 # 0.4   19.09.2020   dcasota  differentiation between image resourcegroup and vm resourcegroup
 # 0.5   02.03.2021   dcasota  switched to device code login
 # 0.51  21.03.2021   dcasota  List available Azure locations updated
+# 0.6   07.04.2021   dcasota  Minor fixing
 #
 #
 # .PARAMETER azconnect
@@ -254,30 +255,32 @@ else
 }
 
 
-if ([string]::IsNullOrEmpty($azclilogin))
+if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
     $azclilogin=az login --use-device-code
 }
 
-if (!([string]::IsNullOrEmpty($azclilogin)))
-{
-    # TODO
-}
-else
+if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
     write-host "Azure CLI login required."
     exit
 }
 
-
-if ([string]::IsNullOrEmpty($azconnect))
+if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
 {
     $azconnect=connect-azaccount -devicecode
+	$AzContext=$null
 }
 
-$AzContext = Get-AzContext
-if (!([string]::IsNullOrEmpty($azcontext)))
+if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
 {
+    write-host "Azure Powershell login required."
+    exit
+}
+
+if (!(Get-variable -name AzContext -ErrorAction SilentlyContinue))
+{
+	$AzContext = Get-AzContext
     $ArmToken = [Microsoft.Azure.Commands.Common.Authentication.AzureSession]::Instance.AuthenticationFactory.Authenticate(
     $AzContext.'Account',
     $AzContext.'Environment',
@@ -289,8 +292,6 @@ if (!([string]::IsNullOrEmpty($azcontext)))
     )
     $tenantId = ($AzContext).Tenant.Id
     $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.core.windows.net/" -TenantId $tenantId).Token
-
-    # TODO
 }
 else
 {
