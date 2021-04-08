@@ -70,6 +70,7 @@
 #   0.91  02.03.2021   dcasota  comment fix
 #   0.92  21.03.2021   dcasota  bugfix photon 2.0 processing
 #   0.93  07.04.2021   dcasota  Changed naming of DownloadURL, bugfixing
+#   0.94  08.04.2021   dcasota  code description added
 #
 # .PARAMETER azconnect
 #   Azure powershell devicecode login
@@ -285,6 +286,13 @@ if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
     $azclilogin=az login --use-device-code
 }
+else
+{
+    if ([string]::IsNullOrEmpty($azclilogin))
+    {
+        $azclilogin=az login --use-device-code
+    }
+}
 
 if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
@@ -296,6 +304,14 @@ if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
 {
     $azconnect=connect-azaccount -devicecode
 	$AzContext=$null
+}
+else
+{
+    if ([string]::IsNullOrEmpty($azconnect))
+    {
+        $azconnect=connect-azaccount -devicecode
+	    $AzContext=$null
+    }
 }
 
 if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
@@ -319,12 +335,6 @@ if (!(Get-variable -name AzContext -ErrorAction SilentlyContinue))
     $tenantId = ($AzContext).Tenant.Id
     $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.core.windows.net/" -TenantId $tenantId).Token
 }
-else
-{
-    write-host "Azure Powershell connect required."
-    exit
-}
-
 
 # save credentials
 $contextfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
@@ -338,6 +348,15 @@ az account set --subscription $subscriptionId
 $Scriptrun=
 @'
 
+# The core concept of this script is:
+#   1) Download and extract the Photon OS bits from download url
+#   2) do a blob upload of the extracted vhd file
+# There are several culprits:
+#   A) The script is started in localsystem account. In LocalSystem context there is no possibility to connect outside.
+#      Hence, the script creates a run once scheduled task with user impersonation and executing the downloaded powershell script.
+#      There are some hacks in localsystem context to make a run-once-scheduled task with user logon type.
+#   B) Portion of the script uses Azure CLI and Azure Powershell. Both are not built-in in W2K19. The script checks and downloads the bits.
+
 $RootDrive=(get-item $tmppath).Root.Name
 $tmpfilename=split-path -path $Uri -Leaf
 $tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
@@ -345,7 +364,6 @@ $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname
 $downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
 $IsVhdUploaded=$env:public + "\VhdUploaded.txt"
 
-# In LocalSystem context there is no possibility to connect outside. Hence, the following snippet runs a schedule task once with impersonation to user VMLocalAdminUser.
 if ($env:username -ine $VMLocalAdminUser)
 {
     $filetostart=$MyInvocation.MyCommand.Source
@@ -368,39 +386,45 @@ if ($env:username -ine $VMLocalAdminUser)
     {
         start-sleep -m 1000
         $i++
-        $rc=schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2018" /ST $begintime /RU ${LocalUser} /RP ${VMLocalAdminPwd} /RL HIGHEST
+        $rc=schtasks.exe /create /f /tn "$Taskname" /tr $Argument /SC ONCE /SD "01/01/2021" /ST $begintime /RU ${LocalUser} /RP ${VMLocalAdminPwd} /RL HIGHEST
+        out-file -inputobject $rc -FilePath d:\test.txt -Encoding ASCII -Append
     }
     until (($rc -ne $null) -or ($i -gt $timeout))
-    if ($rc -eq $null) {exit}
-
-    $tmpxmlfile=$tmppath+"\xml"+ $Identifier+".xml"
-    $rcInner=$null
-    try
+    if ($rc -ne $null)
     {
-        schtasks /query /XML /tn "$Taskname" >"$tmpxmlfile"
-        schtasks /delete /TN "$Taskname" /F
-        (get-content ("$tmpxmlfile")).replace('<LogonType>InteractiveToken</LogonType>','<LogonType>Password</LogonType>') |set-content "$tmpxmlfile"
-        (get-content ("$tmpxmlfile")).replace('<ExecutionTimeLimit>PT72H</ExecutionTimeLimit>','<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>') |set-content "$tmpxmlfile"
-
-        $rcInner=schtasks.exe /create /f /tn "$Taskname" /RU ${LocalUser} /RP ${VMLocalAdminPwd} /XML "$tmpxmlfile"
-        # if (test-path(${tmpxmlfile})) {remove-item -Path ${tmpxmlfile}}
-    }
-    catch{}
-    if ($rcInner -ne $null)
-    {
-        start-sleep -s 1
-        schtasks /Run /TN "$Taskname" /I	
-        $i=0
-        do
+        out-file -inputobject "here" -FilePath d:\test.txt -Encoding ASCII -Append
+        $tmpxmlfile=$tmppath+"\xml"+ $Identifier+".xml"
+        $rcInner=$null
+        try
         {
-            start-sleep -m 1000
-            $i++
-        }
-        until ((test-path(${IsVhdUploaded})) -or ($i -gt $timeout))
+            out-file -inputobject "here1" -FilePath d:\test.txt -Encoding ASCII -Append
+            schtasks /query /XML /tn "$Taskname" >"$tmpxmlfile"
+            schtasks /delete /TN "$Taskname" /F
+            out-file -inputobject "here2" -FilePath d:\test.txt -Encoding ASCII -Append
+            (get-content ("$tmpxmlfile")).replace('<LogonType>InteractiveToken</LogonType>','<LogonType>Password</LogonType>') |set-content "$tmpxmlfile"
+            (get-content ("$tmpxmlfile")).replace('<ExecutionTimeLimit>PT72H</ExecutionTimeLimit>','<ExecutionTimeLimit>PT1H</ExecutionTimeLimit>') |set-content "$tmpxmlfile"
 
-        schtasks /End /TN "$Taskname"
-        start-sleep -s 1
-        schtasks /delete /TN "$Taskname" /F
+            $rcInner=schtasks.exe /create /f /tn "$Taskname" /RU ${LocalUser} /RP ${VMLocalAdminPwd} /XML "$tmpxmlfile"
+            out-file -inputobject $rcInner -FilePath d:\test.txt -Encoding ASCII -Append
+            # if (test-path(${tmpxmlfile})) {remove-item -Path ${tmpxmlfile}}
+        }
+        catch{}
+        if ($rcInner -ne $null)
+        {
+            start-sleep -s 1
+            schtasks /Run /TN "$Taskname" /I	
+            $i=0
+            do
+            {
+                start-sleep -m 1000
+                $i++
+            }
+            until ((test-path(${IsVhdUploaded})) -or ($i -gt $timeout))
+
+            schtasks /End /TN "$Taskname"
+            start-sleep -s 1
+            schtasks /delete /TN "$Taskname" /F
+        }
     }
     exit
 }
@@ -657,7 +681,7 @@ if (-not $($Disk))
 	if ((-not ([Object]::ReferenceEquals($objVM,$null))) -and (!($objBlob)))
 	{
 		# First remote install Az Module
-		az vm extension set --publisher Microsoft.Compute --version 1.8 --name "CustomScriptExtension" --vm-name $vmName --resource-group $ResourceGroupName --settings "{'commandToExecute':'powershell.exe Install-module Az -force -ErrorAction SilentlyContinue;'}"
+		az vm extension set --publisher Microsoft.Compute --version 1.8 --name "CustomScriptExtension" --vm-name $vmName --resource-group $ResourceGroupName --settings "{'commandToExecute':'powershell.exe Install-module Az -force -ErrorAction SilentlyContinue'}"
 		Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $VMName -Name "CustomScriptExtension" -force
 		
 		# Prepare scriptfile
@@ -680,10 +704,6 @@ if (-not $($Disk))
 		$tmp='$ContainerName="'+$ContainerName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$VMLocalAdminUser="'+$VMLocalAdminUser+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$VMLocalAdminPwd="'+$VMLocalAdminPwd+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-        $tmp='Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "AutoAdminLogon" -Value "1" -type String'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-        $tmp='Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "DefaultUsername" -Value "$VMLocalAdminUser" -type String'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-        $tmp='Set-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" "DefaultPassword" -Value "$VMLocalAdminPwd" -type String'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-
 		out-file -inputobject $ScriptRun -FilePath $ScriptFile -Encoding ASCII -append
 
 		remove-item -path ($contextfileEncoded) -force
