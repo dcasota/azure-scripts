@@ -44,8 +44,11 @@ In addition,
 - There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
 - In situations where must-functions in Packer and/or Azure Image Builder are not available yet, but available using Azure Powershell+CLI, it has been an affordable way to adopt a Scripted Azure image creation method. It uses a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build. Actually, this repo shares findings specifically on provisioning VMware Photon OS on Azure using Scripted Azure image creation.
 
-![VMware Photon OS Azure Images](https://github.com/dcasota/azure-scripts/blob/master/VMware-Photon-OS-Azure-Images.png)
-
+![VMware Photon OS Azure Images](
+<p align="center">
+  <img width="296" height="151" src="https://github.com/dcasota/azure-scripts/blob/master/VMware-Photon-OS-Azure-Images.png">
+</p>
+)
 
 # Photon OS on Azure - scripts
 
