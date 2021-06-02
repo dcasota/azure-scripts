@@ -122,7 +122,7 @@ param(
 [string]$VMName,
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-$VMSize = "Standard_B1ms",
+$VMSize = "Standard_B2ms",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$nsgName = "nsg"+$VMName,
@@ -259,6 +259,13 @@ if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
     $azclilogin=az login --use-device-code
 }
+else
+{
+    if ([string]::IsNullOrEmpty($azclilogin))
+    {
+        $azclilogin=az login --use-device-code
+    }
+}
 
 if (!(Get-variable -name azclilogin -ErrorAction SilentlyContinue))
 {
@@ -270,6 +277,14 @@ if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
 {
     $azconnect=connect-azaccount -devicecode
 	$AzContext=$null
+}
+else
+{
+    if ([string]::IsNullOrEmpty($azconnect))
+    {
+        $azconnect=connect-azaccount -devicecode
+	    $AzContext=$null
+    }
 }
 
 if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
@@ -293,11 +308,7 @@ if (!(Get-variable -name AzContext -ErrorAction SilentlyContinue))
     $tenantId = ($AzContext).Tenant.Id
     $accessToken = (Get-AzAccessToken -ResourceUrl "https://management.core.windows.net/" -TenantId $tenantId).Token
 }
-else
-{
-    write-host "Azure Powershell connect required."
-    exit
-}
+
 
 #Set the context to the subscription Id where the Azure image exists and where the virtual machine will be created
 $subscriptionId=(get-azcontext).Subscription.Id
