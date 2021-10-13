@@ -5,6 +5,7 @@
 #  Actually there are no official Azure marketplace images of VMware Photon OS. You can create one using the official .vhd file of a specific VMware Photon OS build.
 #
 #  VMware Photon OS build download links:
+#    Photon OS 4.0 Rev1 Azure VHD:                       https://packages.vmware.com/photon/4.0/Rev1/azure/photon-azure-4.0-ca7c9e933.vhd.tar.gz
 #    Photon OS 4.0 GA Azure VHD:                         https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz
 #      Photon OS 4.0 RC Azure VHD:                       https://packages.vmware.com/photon/4.0/RC/azure/photon-azure-4.0-a3a49f540.vhd.tar.gz
 #      Photon OS 4.0 Beta Azure VHD:                     https://packages.vmware.com/photon/4.0/Beta/azure/photon-azure-4.0-d98e681.vhd.tar.gz
@@ -71,6 +72,7 @@
 #   0.92  21.03.2021   dcasota  bugfix photon 2.0 processing
 #   0.93  07.04.2021   dcasota  Changed naming of DownloadURL, bugfixing
 #   0.94  08.04.2021   dcasota  code description added
+#   1.00  13.10.2021   dcasota  Photon OS 4.0 Rev1 Azure Vhd added
 #
 # .PARAMETER azconnect
 #   Azure powershell devicecode login
@@ -109,7 +111,8 @@ param(
 [string]$azclilogin,
 
 [Parameter(Mandatory = $true)]
-[ValidateSet('https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz', `
+[ValidateSet('https://packages.vmware.com/photon/4.0/Rev1/azure/photon-azure-4.0-ca7c9e933.vhd.tar.gz', `
+'https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz', `
 'https://packages.vmware.com/photon/4.0/RC/azure/photon-azure-4.0-a3a49f540.vhd.tar.gz', `
 'https://packages.vmware.com/photon/4.0/Beta/azure/photon-azure-4.0-d98e681.vhd.tar.gz', `
 'https://packages.vmware.com/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz', `
@@ -120,7 +123,7 @@ param(
 'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz', `
 'https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz', `
 'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
-[String]$DownloadURL="https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz",
+[String]$DownloadURL="https://packages.vmware.com/photon/4.0/Rev1/azure/photon-azure-4.0-ca7c9e933.vhd.tar.gz",
 
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
