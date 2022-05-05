@@ -1,6 +1,6 @@
 # VMware Tanzu Kubernetes Grid on Azure
 
-VMware Tanzu Kubernetes Grid (TKG) Plus (see [KB article](https://kb.vmware.com/s/article/78173)) enables to deploy and run containerized workloads across private and public clouds. To run workloads across Azure you must have deployed a TKG cluster.
+VMware Tanzu Kubernetes Grid (TKG) Plus (see [KB article](https://kb.vmware.com/s/article/67389)) enables to deploy and run containerized workloads across private and public clouds. To run workloads across Azure you must have deployed a TKG cluster.
 
 The management cluster is the first cluster and must run on an optimized compute environment. Usually this is a VMware vSphere environment. You can deploy the management cluster (see [here](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.3/vmware-tanzu-kubernetes-grid-13/GUID-mgmt-clusters-deploy-management-clusters.html)) on
 1. your VMware vSphere environment
