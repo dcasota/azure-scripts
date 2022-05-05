@@ -7,7 +7,7 @@ The management cluster is the first cluster and must run on an optimized compute
 2. your Azure VMware Solution Tenant (see [AVS](https://cloud.vmware.com/azure-vmware-solution))
 3. Azure Hyper-V ressources for testing purposes
 
-Most VMware appliances' OS is Photon OS, optimized to run best on ESXi. This matches with cases one and two.
+Most VMware appliances' OS is a striped-down, commercialized sort of Photon OS, optimized to run best on ESXi. This matches with cases one and two.
 
 For AVS Tenant and Azure Hyper-V ressources there is a ready-to-use TKG application Azure offering on top on Ubuntu: ```get-azvmimagesku -Location Switzerlandnorth -PublisherName vmware-inc -Offer tkg-capi```
 
