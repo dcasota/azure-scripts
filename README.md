@@ -1,38 +1,3 @@
-# VMware Tanzu Kubernetes Grid on Azure
-
-VMware Tanzu Kubernetes Grid (TKG) Plus (see [KB article](https://kb.vmware.com/s/article/67389)) enables to deploy and run containerized workloads across private and public clouds. To run workloads across Azure you must have deployed a TKG cluster.
-
-The management cluster is the first cluster and must run on an optimized compute environment. Usually this is a VMware vSphere environment. You can deploy the management cluster (see [here](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.5/vmware-tanzu-kubernetes-grid-15/GUID-mgmt-clusters-deploy-management-clusters.html) on
-1. your VMware vSphere environment
-2. your Azure VMware Solution Tenant (see [AVS](https://cloud.vmware.com/azure-vmware-solution))
-3. Azure Hyper-V resources for testing purposes
-
-Most VMware appliances' OS is a striped-down, commercialized sort of Photon OS, optimized to run best on ESXi. This matches with cases one and two.
-
-For AVS Tenant and Azure Hyper-V ressources there is a ready-to-use TKG application Azure offering on top on Ubuntu: ```get-azvmimagesku -Location Switzerlandnorth -PublisherName vmware-inc -Offer tkg-capi```
-
-In reference to [Tanzu Kuberneted Grid on Azure docs](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.5/vmware-tanzu-kubernetes-grid-15/GUID-mgmt-clusters-azure.html) a supported plan is k8s-1dot20dot4-ubuntu-2004.  
-```
-get-azvmimage -Location Switzerlandnorth -PublisherName vmware-inc -Offer tkg-capi -skus k8s-1dot20dot4-ubuntu-2004
-
-Version    Skus                       Offer    PublisherName Location         Id                                                                                                                            
--------    ----                       -----    ------------- --------         --                                                                                                                            
-2021.02.24 k8s-1dot20dot4-ubuntu-2004 tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmwar...
-2021.03.05 k8s-1dot20dot4-ubuntu-2004 tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmwar...
-```
-
-# VMware Tanzu Kubernetes Grid on Azure - scripts
-
-This repo contains Azure Powershell helper scripts for VMware Tanzu Kubernetes Grid on Azure.
-
-```TKG-CAPI-Install.ps1```
-The script deploys the Azure TKG-CAPI virtual machine. Simply modify all variables right at the beginning. The setup works with the sku k8s-1dot20dot4-ubuntu-2004 on version 2021.03.05.
-Prerequisites are:
-- Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
-- Azure account with Virtual Machine contributor role
-
-It installs Powershell Az module if necessary on your local computer. Afterwards the script connects to Azure and checks/creates resource group, storage account, virtual network with a public ip and a network security group with rules for ports 22 and 6443, and deploys the virtual machine from the marketplace tkg-capi image.
-
 # Photon OS on Azure
 
 Actually there are no official Azure marketplace VM images of VMware Photon OS. From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows still is a key feature for many customers. A few Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
@@ -105,6 +70,41 @@ On Azure, VMs with UEFI boot type support are somewhat limited yet (see docs abo
 - https://docs.microsoft.com/en-us/azure/virtual-machines/trusted-launch
 - https://docs.vmware.com/en/VMware-vSphere/6.7/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
 - https://docs.vmware.com/en/VMware-vSphere/7.0/com.vmware.vsphere.vm_admin.doc/GUID-789C3913-1053-4850-A0F0-E29C3D32B6DA.html
+
+# VMware Tanzu Kubernetes Grid on Azure
+
+VMware Tanzu Kubernetes Grid (TKG) Plus (see [KB article](https://kb.vmware.com/s/article/67389)) enables to deploy and run containerized workloads across private and public clouds. To run workloads across Azure you must have deployed a TKG cluster.
+
+The management cluster is the first cluster and must run on an optimized compute environment. Usually this is a VMware vSphere environment. You can deploy the management cluster (see [here](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.5/vmware-tanzu-kubernetes-grid-15/GUID-mgmt-clusters-deploy-management-clusters.html) on
+1. your VMware vSphere environment
+2. your Azure VMware Solution Tenant (see [AVS](https://cloud.vmware.com/azure-vmware-solution))
+3. Azure Hyper-V resources for testing purposes
+
+Most VMware appliances' OS is a striped-down, commercialized sort of Photon OS, optimized to run best on ESXi. This matches with cases one and two.
+
+For AVS Tenant and Azure Hyper-V ressources there is a ready-to-use TKG application Azure offering on top on Ubuntu: ```get-azvmimagesku -Location Switzerlandnorth -PublisherName vmware-inc -Offer tkg-capi```
+
+In reference to [Tanzu Kuberneted Grid on Azure docs](https://docs.vmware.com/en/VMware-Tanzu-Kubernetes-Grid/1.5/vmware-tanzu-kubernetes-grid-15/GUID-mgmt-clusters-azure.html) a supported plan is k8s-1dot20dot4-ubuntu-2004.  
+```
+get-azvmimage -Location Switzerlandnorth -PublisherName vmware-inc -Offer tkg-capi -skus k8s-1dot20dot4-ubuntu-2004
+
+Version    Skus                       Offer    PublisherName Location         Id                                                                                                                            
+-------    ----                       -----    ------------- --------         --                                                                                                                            
+2021.02.24 k8s-1dot20dot4-ubuntu-2004 tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmwar...
+2021.03.05 k8s-1dot20dot4-ubuntu-2004 tkg-capi vmware-inc    SwitzerlandNorth /Subscriptions/1f6820c3-1aec-4b3c-9a9b-da3a9b8810de/Providers/Microsoft.Compute/Locations/SwitzerlandNorth/Publishers/vmwar...
+```
+
+# VMware Tanzu Kubernetes Grid on Azure - scripts
+
+This repo contains Azure Powershell helper scripts for VMware Tanzu Kubernetes Grid on Azure.
+
+```TKG-CAPI-Install.ps1```
+The script deploys the Azure TKG-CAPI virtual machine. Simply modify all variables right at the beginning. The setup works with the sku k8s-1dot20dot4-ubuntu-2004 on version 2021.03.05.
+Prerequisites are:
+- Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
+- Azure account with Virtual Machine contributor role
+
+It installs Powershell Az module if necessary on your local computer. Afterwards the script connects to Azure and checks/creates resource group, storage account, virtual network with a public ip and a network security group with rules for ports 22 and 6443, and deploys the virtual machine from the marketplace tkg-capi image.
 
 
 
