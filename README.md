@@ -56,7 +56,7 @@ The script creates an Azure image of a VMware Photon OS release for Azure. Simpl
 
 ```./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz" -ResourceGroupName <your resource group> -Location <your location> -HyperVGeneration <V1/V2>```
 
-Don't worry if you don't know the public URLs. Those are included as ValidateSet inside the script.
+Don't worry if you don't know the public URLs. Those are included as ValidateSet inside the script so you can easily copy&paste the preferred url.
 
 Prerequisites are:
 - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -66,27 +66,34 @@ The script uses the VHD file url of a VMware Photon OS build, more information s
 You can pass a bunch of parameters like Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install the Powershell Az module if necessary on your local computer.  
 Afterwards it connects to your Azure subscription and saves the Az-Context. It checks/creates resource group, virtual network, storage account/container/blob and settings for a temporary windows server virtual machine. The VMware Photon OS bits for Azure are downloaded from the VMware download location, and the extracted VMware Photon OS .vhd is uploaded as Azure page blob from inside the temporary virtual machine. The temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V1 or V2 virtual hardware using the offering Standard_E4s_v3. This allows the creation of Generation V1 or V2 virtual machines. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Microsoft Windows Server VM.  
 Afterwards the image has been created, the Microsoft Windows Server VM is deleted.  
-You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your Azure resource group. Default is V2 and the name of the image ends with "_V2.vhd".  
+You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your Azure resource group. Default is V2 and the name of the image ends with "_V2.vhd". 
+
+Have a look to the test script ```create-AzImage-PhotonOS-AllVersions.ps1``` as well. It uses ```create-AzImage-PhotonOS.ps1``` to create the V1 and V2 Azure Images of all VMware Photon OS releases
+
+<img src="https://github.com/dcasota/azure-scripts/blob/master/PhotonOS/VMware.PhotonOS.hyperscalers.Azure.png" align="left" />
+<br clear="left"/><br clear="both"/>
 
 ## create-AzVM_FromImage-PhotonOS.ps1
 
-The script creates an Azure VM from an individual VMware Photon OS Azure Image. Start the script using following parameters: 
+The script provisions an Azure VM from an existing VMware Photon OS Azure Image. Start the script using following parameters: 
 
 ```./create-AzVM_FromImage-PhotonOS.ps1 -Location <location> -ResourceGroupNameImage <resource group of the Azure image> -ImageName <image name ending with .vhd> -ResourceGroupName <resource group of the new VM> -VMName <VM name>```
 
-The script checks/creates resource group, virtual network, storage account/container/blob and the virtual machine. It finishes with enabling the Azure boot-diagnostics option.
+The script supports many additional parameters. It can be used for more advanced lab setups as well.
+
+Per default, the VM size is Standard_B1ms.
 
 Have a look to the optional script parameter values. As example, a local user account on Photon OS will be created during provisioning. There are some password complexity rules to know.
 - ```[string]$VMLocalAdminUser = "Local"``` # Check if uppercase and lowercase is enforced/supported.
 - ```[string]$VMLocalAdminPwd="Secure2020123."```# 12-123 chars
+
+The script checks/creates resource group, virtual network, storage account/container/blob and the virtual machine.
 
 ## create-AzImage-PhotonOS-AllVersions.ps1
 
 This is a test script which creates the V1 and V2 Azure Images of all VMware Photon OS releases. Just start it. The creation of all versions takes a while.
 
 Keep in mind it's a test script. From earlier tests results, sometimes the whole creation sequence stopped suddenly and on a different Photon OS release version as on the last run. As workaround simply rerun the creation only of the missing versions.
-
-
 
 # When to use Azure Generation V2 virtual machine?
 For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
