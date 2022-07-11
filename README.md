@@ -1,14 +1,13 @@
 # Photon OS on Azure
 
-Actually there are no official Azure marketplace VM images of VMware Photon OS. From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows still is a key feature for many customers. A few Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
+Actually VMware Photon OS is not an Azure Marketplace base operating system image. From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows still is a key feature for many customers. A few Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
 
-To run Photon OS on Azure have a look to https://github.com/vmware/photon/wiki/Downloading-Photon-OS. You will find for most releases the appropriate Azure VHD file.
+To run Photon OS on Azure have a look to [Downloading Photon OS](https://github.com/vmware/photon/wiki/Downloading-Photon-OS). You will find for most releases the appropriate Azure VHD file.
 In situations where you rather need a container, better have a look to https://hub.docker.com/_/photon.
 In addition,
-- You can customize Photon OS images with [Packer on Azure] (https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer).
-- There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
-- In situations where must-functions in Packer and/or Azure Image Builder are not desired/available, but available using Azure Powershell+CLI, it has been an affordable way to adopt a Scripted Azure image creation method. It uses a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build. Actually, this repo shares findings specifically on provisioning VMware Photon OS on Azure using Scripted Azure image creation.
-
+- You can customize Photon OS images with [Packer on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer)
+- You could use [Azure Image Builder](https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview)
+- In situations where must-functions in Packer and/or Azure Image Builder are not desired/available, but available using Azure Powershell+CLI, it might be an affordable way to adopt a Scripted Azure image creation method.using the official VHD file of a specific VMware Photon OS build. See next chapter 'Photon OS on Azure - scripts'.
 
 
 # Photon OS on Azure - scripts
@@ -27,10 +26,10 @@ Prerequisites are:
 - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
 - Azure account with Virtual Machine contributor role
 
-The script uses the VHD file url of a VMware Photon OS build, more information see https://github.com/vmware/photon/wiki/Downloading-Photon-OS.  
-You can pass a bunch of parameters like Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install the Powershell Az module if necessary on your local computer.  
-Afterwards it connects to your Azure subscription and saves the Az-Context. It checks/creates resource group, virtual network, storage account/container/blob and settings for a temporary windows server virtual machine. The VMware Photon OS bits for Azure are downloaded from the VMware download location, and the extracted VMware Photon OS .vhd is uploaded as Azure page blob from inside the temporary virtual machine. The temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V1 or V2 virtual hardware using the offering Standard_E4s_v3. This allows the creation of Generation V1 or V2 virtual machines. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Microsoft Windows Server VM.  
-Afterwards the image has been created, the Microsoft Windows Server VM is deleted.  
+The script uses the VHD file url of a VMware Photon OS build.
+You can pass a bunch of parameters eg. Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install to your local computer if necessary the Powershell Az 8.0 module.  
+Afterwards it connects to your Azure subscription and saves the Az-Context. It checks/creates resource group, virtual network, storage account/container/blob and settings for a temporary windows server virtual machine. The VMware Photon OS bits for Azure are downloaded from the VMware download location, and the extracted VMware Photon OS .vhd is uploaded as Azure page blob from inside the temporary virtual machine. The temporary virtual machine created is Microsoft Windows Server 2019 on a Hyper-V Generation V1 or V2 virtual hardware using the offering Standard_E4s_v3. This allows the creation of Generation V1 or V2 virtual machines. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Microsoft Windows Server vm.  
+Afterwards the image has been created, the Microsoft Windows Server vm is deleted.  
 You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your Azure resource group. Default is V2 and the name of the image ends with "_V2.vhd". 
 
 Have a look to the test script ```create-AzImage-PhotonOS-AllVersions.ps1``` as well. It uses ```create-AzImage-PhotonOS.ps1``` to create the V1 and V2 Azure Images of all VMware Photon OS releases
