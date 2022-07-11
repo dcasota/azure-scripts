@@ -62,11 +62,11 @@ Prerequisites are:
 - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
 - Azure account with Virtual Machine contributor role
 
-The script uses the VHD file url of a VMware Photon OS build, more information see https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
-You can pass a bunch of parameters like Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install the Powershell Az module if necessary on your local computer.
-Afterwards it connects to your Azure subscription and saves the Az-Context. It checks/creates resource group, virtual network, storage account/container/blob and settings for a temporary windows server virtual machine. The VMware Photon OS bits for Azure are downloaded from the VMware download location, and the extracted VMware Photon OS .vhd is uploaded as Azure page blob from inside the temporary virtual machine. The temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V1 or V2 virtual hardware using the offering Standard_E4s_v3. This allows the creation of Generation V1 or V2 virtual machines. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Microsoft Windows Server VM.
-Afterwards the image has been created, the Microsoft Windows Server VM is deleted.
-You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your Azure resource group. Default is V2 and the name of the image ends with "_V2.vhd".
+The script uses the VHD file url of a VMware Photon OS build, more information see https://github.com/vmware/photon/wiki/Downloading-Photon-OS.  
+You can pass a bunch of parameters like Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install the Powershell Az module if necessary on your local computer.  
+Afterwards it connects to your Azure subscription and saves the Az-Context. It checks/creates resource group, virtual network, storage account/container/blob and settings for a temporary windows server virtual machine. The VMware Photon OS bits for Azure are downloaded from the VMware download location, and the extracted VMware Photon OS .vhd is uploaded as Azure page blob from inside the temporary virtual machine. The temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V1 or V2 virtual hardware using the offering Standard_E4s_v3. This allows the creation of Generation V1 or V2 virtual machines. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Microsoft Windows Server VM.  
+Afterwards the image has been created, the Microsoft Windows Server VM is deleted.  
+You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your Azure resource group. Default is V2 and the name of the image ends with "_V2.vhd".  
 
 ## create-AzVM_FromImage-PhotonOS.ps1
 
@@ -85,6 +85,8 @@ Have a look to the optional script parameter values. As example, a local user ac
 This is a test script which creates the V1 and V2 Azure Images of all VMware Photon OS releases. Just start it. The creation of all versions takes a while.
 
 Keep in mind it's a test script. From earlier tests results, sometimes the whole creation sequence stopped suddenly and on a different Photon OS release version as on the last run. As workaround simply rerun the creation only of the missing versions.
+
+
 
 # When to use Azure Generation V2 virtual machine?
 For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
