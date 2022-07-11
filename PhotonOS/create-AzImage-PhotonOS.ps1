@@ -4,20 +4,17 @@
 #  Deploy an Azure image of VMware Photon OS
 #
 # .DESCRIPTION
-#  The cmdlet does a device login on Azure, and uses the specified location and resource group to create an Azure image.
-#  Specifying the VMware Photon OS build is optionally. Tt creates an Azure image with Photon OS latest.
+#  The script creates an Azure image of VMware Photon OS by vhd download url, the location and the resource group name as mandatory parameters.
+#  Without specifying further parameters, an Azure image HyperVGeneration V2 of VMware Photon OS 4.0 rev2 is created.
+#  The name of the Azure image is adopted from the vhd download url and the HyperVGeneration ending _V1.vhd or _V2.vhd. It looks like "photon-azure-4.0-c001795b8_V2.vhd".
 #
-#  First tt triggers an Azure login using the device code method.
+#  First the script installs the Az 8.0 module if necessary and triggers an Azure login using the device code method. You get a similar message to
 #    WARNUNG: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
 #  The Azure Powershell output shows up as warning (see above). Open a webbrowser, and fill in the code given by the Azure Powershell login output.
 #
-#  Actually there are no official Azure marketplace images of VMware Photon OS. Enter a VMware Photon OS vhd file weblink as DownloadURL.
-#  The script installs Azure powershell components if necessary. It doesn't make use of the Azure Image Builder template creation method.
-#  A temporary Azure windows virtual machine is created with Microsoft Windows Server 2022 on a specifiable Hyper-V generation virtual hardware V1/v2 using the Azure offering Standard_E4s_v3.
+#  A temporary Azure windows virtual machine is created with Microsoft Windows Server 2022 on a specifiable Hyper-V generation virtual hardware V1/V2 using the Azure offering Standard_E4s_v3.
 #  See Azure virtual hardware generation related weblink https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
 #  After uploading the extracted VMware Photon OS release vhd file as Azure page blob, the Azure Photon OS image is created. The cleanup deletes the temporary virtual machine.
-#
-#  It would be nice to avoid some cmdlets-specific warning output on the host screen during run. You can safely ignore Warnings.
 #
 #  .PREREQUISITES
 #    - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
@@ -43,6 +40,7 @@
 #   1.00  13.10.2021   dcasota  Photon OS 4.0 Rev1 Azure Vhd added
 #   1.01  08.11.2021   dcasota  Enforced Azure powershell + cli version update, temp vm scheduled task bug fix
 #   1.10  15.06.2022   dcasota  Bugfixing, substitution of Azure CLI commands with Azure Powershell commands, latest Photon OS release added
+#   1.11  11.07.2022   dcasota  text changes
 #
 # .PARAMETER DownloadURL
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
@@ -78,7 +76,7 @@
 #   Name of the HelperVMDiskName in the Image
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/Rev1/azure/photon-azure-4.0-ca7c9e933.vhd.tar.gz" -ResourceGroupName ph4Rev1lab -Location switzerlandnorth -HyperVGeneration V2
+#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz" -ResourceGroupName ph4Rev1lab -Location switzerlandnorth -HyperVGeneration V2
 #
 #>
 
@@ -121,7 +119,7 @@ param(
 [string]$StorageAccountType="Standard_LRS",
 
 [Parameter(Mandatory = $false)][ValidateSet('V1','V2')]
-[string]$HyperVGeneration="V1",
+[string]$HyperVGeneration="V2",
 
 [Parameter(Mandatory = $false)]
 [string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL)) -Leaf) -split ".vhd")[0] + "_" + $HyperVGeneration + ".vhd"),
@@ -468,13 +466,14 @@ if (-not $($Disk))
 			}
 
 			$vmConfig = Set-AzVMOperatingSystem -Windows -VM $vmConfig -ComputerName $HelperVMComputerName -Credential $LocalAdminUserCredential | `
-			Set-AzVMSourceImage -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion
+			Set-AzVMSourceImage -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion		
+			$vmConfig | Set-AzVMBootDiagnostic -Disable
 
-            # $vmConfig = Set-AzVmSecurityProfile -VM $vmConfig -SecurityType  "trustedLaunch"
-            # $vmConfig  = Set-AzVmUefi -VM $vmConfig -EnableVtpm  $true  -EnableSecureBoot $true
-
-			# Create the virtual machine
+			# Create the virtual machine		
 			New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vmConfig
+			
+			$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName			
+			Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName			
 		}
 	}
 
