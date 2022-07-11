@@ -42,33 +42,34 @@ In situations where you rather need a container, better have a look to https://h
 In addition,
 - You can customize Photon OS images with [Packer on Azure] (https://docs.microsoft.com/en-us/azure/virtual-machines/linux/build-image-with-packer).
 - There is a technical preview of the upcoming [Azure Image Builder] (https://docs.microsoft.com/en-us/azure/virtual-machines/image-builder-overview).
-- In situations where must-functions in Packer and/or Azure Image Builder are not available yet, but available using Azure Powershell+CLI, it has been an affordable way to adopt a Scripted Azure image creation method. It uses a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build. Actually, this repo shares findings specifically on provisioning VMware Photon OS on Azure using Scripted Azure image creation.
+- In situations where must-functions in Packer and/or Azure Image Builder are not desired/available, but available using Azure Powershell+CLI, it has been an affordable way to adopt a Scripted Azure image creation method. It uses a mix of Azure Powershell+CLI with the official ISO or VHD file of a specific VMware Photon OS build. Actually, this repo shares findings specifically on provisioning VMware Photon OS on Azure using Scripted Azure image creation.
 
-<p align="center">
-  <img width="296" height="151" src="https://github.com/dcasota/azure-scripts/blob/master/VMware-Photon-OS-Azure-Images.png" alt="animated" />
-</p>
 
 
 # Photon OS on Azure - scripts
 
-This repo contains Azure Powershell+CLI to create a Photon OS Azure image and deploy Photon OS virtual machines.
+In the sub directory "PhotonOS" you will find several scripts to deploy Photon OS Azure images and provision Photon OS virtual machines.
 
-```create-AzImage-PhotonOS.ps1```
+## create-AzImage-PhotonOS.ps1
+
 The script creates an Azure image of a VMware Photon OS release for Azure. Simply start the script using following parameters: 
 
 ```./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz" -ResourceGroupName <your resource group> -Location <your location> -HyperVGeneration <V1/V2>```
+
+Don't worry if you don't know the public URLs. Those are included as ValidateSet inside the script.
 
 Prerequisites are:
 - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
 - Azure account with Virtual Machine contributor role
 
 The script uses the VHD file url of a VMware Photon OS build, more information see https://github.com/vmware/photon/wiki/Downloading-Photon-OS.
-You can pass a bunch of parameters like Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install Azure CLI and the Powershell Az module if necessary on your local computer.
+You can pass a bunch of parameters like Azure device login, resourcegroup, location name, storage account, container, image name, etc. The script tries to install the Powershell Az module if necessary on your local computer.
 Afterwards it connects to your Azure subscription and saves the Az-Context. It checks/creates resource group, virtual network, storage account/container/blob and settings for a temporary windows server virtual machine. The VMware Photon OS bits for Azure are downloaded from the VMware download location, and the extracted VMware Photon OS .vhd is uploaded as Azure page blob from inside the temporary virtual machine. The temporary VM created is Microsoft Windows Server 2019 on a Hyper-V Generation V1 or V2 virtual hardware using the offering Standard_E4s_v3. This allows the creation of Generation V1 or V2 virtual machines. Using the AzVMCustomScriptExtension functionality, dynamically created scriptblocks including passed Az-Context are used to postinstall the necessary prerequisites inside that Microsoft Windows Server VM.
 Afterwards the image has been created, the Microsoft Windows Server VM is deleted.
-You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your ResourceGroup. Default is V2 and the name of the image ends with "V2.vhd".
+You find the VMware Photon OS HyperV Generation V1 or V2 image stored in your Azure resource group. Default is V2 and the name of the image ends with "_V2.vhd".
 
-```create-AzVM_FromImage-PhotonOS.ps1```
+## create-AzVM_FromImage-PhotonOS.ps1
+
 The script creates an Azure VM from an individual VMware Photon OS Azure Image. Start the script using following parameters: 
 
 ```./create-AzVM_FromImage-PhotonOS.ps1 -Location <location> -ResourceGroupNameImage <resource group of the Azure image> -ImageName <image name ending with .vhd> -ResourceGroupName <resource group of the new VM> -VMName <VM name>```
@@ -79,6 +80,11 @@ Have a look to the optional script parameter values. As example, a local user ac
 - ```[string]$VMLocalAdminUser = "Local"``` # Check if uppercase and lowercase is enforced/supported.
 - ```[string]$VMLocalAdminPwd="Secure2020123."```# 12-123 chars
 
+## create-AzImage-PhotonOS-AllVersions.ps1
+
+This is a test script which creates the V1 and V2 Azure Images of all VMware Photon OS releases. Just start it. The creation of all versions takes a while.
+
+Keep in mind it's a test script. From earlier tests results, sometimes the whole creation sequence stopped suddenly and on a different Photon OS release version as on the last run. As workaround simply rerun the creation only of the missing versions.
 
 # When to use Azure Generation V2 virtual machine?
 For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
@@ -94,7 +100,6 @@ On Azure, VMs with UEFI boot type support are somewhat limited yet (see docs abo
 
 
 # Archive
-```create-AzImage_GenV2-PhotonOS.ps1``` creates an Azure Generation V2 image of VMware Photon OS. This script is deprecated. Use ```create-AzImage-PhotonOS.ps1```.
 
 ```Ubuntu18.04-Install.ps1```
 Deploys the Azure template Canonical Ubuntu 18.04 Server.
