@@ -57,7 +57,7 @@ The script checks/creates resource group, virtual network, storage account/conta
 
 This is a test script which creates the V1 and V2 Azure Images of all VMware Photon OS releases. Just start it. The creation of all versions takes a while.
 
-Keep in mind it's a test script. From earlier tests results, sometimes the whole creation sequence stopped suddenly and on a different Photon OS release version as on the last run. As workaround simply rerun the creation only of the missing versions.
+Keep in mind it's a test script. From earlier tests results, sometimes the whole creation sequence stopped suddenly and on a different Photon OS release version as on the last run. As workaround, rerun the creation only for the missing versions eg. by putting a ```#``` at the line beginning of each version already processed.
 
 # When to use Azure Generation V2 virtual machine?
 For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
