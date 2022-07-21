@@ -1,6 +1,6 @@
 # Photon OS on Azure
 
-Actually VMware Photon OS is not an Azure Marketplace base operating system image. From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows still is a key feature for many customers. A few Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
+Actually VMware Photon OS is not an Azure Marketplace base operating system image. From a technical feasibility perspective of a new generation of marketplace offerings, time-limited hosting of OS releases and good practices of immutable infrastructure workflows is a desired feature. A few Linux distros Ubuntu, openSUSE, CentOS, SLES, Debian or CoreOS enjoy endorsed support by Azure. For customers with many Windows servers onpremise and a few Linux servers these offerings help to simplify their hybrid cloud infrastructure management journey. Here's a good starting tutorial on [managing static Linux VMs on Azure](https://docs.microsoft.com/en-us/azure/virtual-machines/windows/tutorial-custom-images).
 
 To run Photon OS on Azure have a look to [Downloading Photon OS](https://github.com/vmware/photon/wiki/Downloading-Photon-OS). You will find for most releases the appropriate Azure VHD file.
 In situations where you rather need a container, better have a look to https://hub.docker.com/_/photon.
@@ -18,7 +18,7 @@ In the sub directory "PhotonOS" you will find several scripts to deploy Photon O
 
 The script creates an Azure image of a VMware Photon OS release for Azure. Simply start the script using following parameters: 
 
-```./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz" -ResourceGroupName <your resource group> -Location <your location> -HyperVGeneration <V1/V2>```
+```./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz" -ResourceGroupName <your resource group> -LocationName <your location> -HyperVGeneration <V1/V2>```
 
 Don't worry if you don't know the public URLs. Those are included as ValidateSet inside the script so you can easily copy&paste the preferred url.
 
@@ -41,15 +41,13 @@ Have a look to the test script ```create-AzImage-PhotonOS-AllVersions.ps1``` as 
 
 The script provisions an Azure VM from an existing VMware Photon OS Azure Image. Start the script using following parameters: 
 
-```./create-AzVM_FromImage-PhotonOS.ps1 -Location <location> -ResourceGroupNameImage <resource group of the Azure image> -ImageName <image name ending with .vhd> -ResourceGroupName <resource group of the new VM> -VMName <VM name>```
+```./create-AzVM_FromImage-PhotonOS.ps1 -LocationName <location> -ResourceGroupNameImage <resource group of the Azure image> -ImageName <image name ending with .vhd> -ResourceGroupName <resource group of the new VM> -VMName <VM name>```
 
 The script supports many additional parameters. It can be used for more advanced lab setups as well.
 
 Per default, the VM size is Standard_B1ms.
 
-Have a look to the optional script parameter values. As example, a local user account on Photon OS will be created during provisioning. There are some password complexity rules to know.
-- ```[string]$VMLocalAdminUser = "Local"``` # Check if uppercase and lowercase is enforced/supported.
-- ```[string]$VMLocalAdminPwd="Secure2020123."```# 12-123 chars
+Have a look to the optional script parameter values. As example, with VMLocalAdminCredential a local user account will be created during provisioning. There are some password complexity rules to know.
 
 The script checks/creates resource group, virtual network, storage account/container/blob and the virtual machine.
 
@@ -61,7 +59,7 @@ Keep in mind it's a test script. From earlier tests results, sometimes the whole
 
 # When to use Azure Generation V2 virtual machine?
 For system engineers knowledge about the VMware virtual hardware version is crucial when it comes to VM capabilities and natural limitations. Latest capabilities like UEFI boot type and virtualization-based security are still evolving. 
-The same begins for cloud virtual hardware like in Azure Generations.
+The same begins for cloud virtual hardware eg. in Azure Generations.
 On Azure, VMs with UEFI boot type support are somewhat limited yet (see docs about trusted launch). However some downgrade options were made available to migrate such on-premises Windows servers to Azure by converting the boot type of the on-premises servers to BIOS while migrating them.
 
  Some docs artefacts about
