@@ -98,7 +98,7 @@ param(
 [string]$ContainerName = "${RuntimeId}disks",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-$VMSize = "Standard_E4s_v3",
+$VMSize = "Standard_B1ms",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$nsgName = "${RuntimeId}nsg",
