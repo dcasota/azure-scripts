@@ -1,6 +1,4 @@
-﻿# Function New-PhotonOSTemplateOnAzure {
-<#
-# .SYNOPSIS
+﻿# .SYNOPSIS
 #  Deploy an Azure image of VMware Photon OS
 #
 # .DESCRIPTION
@@ -41,6 +39,7 @@
 #   1.01  08.11.2021   dcasota  Enforced Azure powershell + cli version update, temp vm scheduled task bug fix
 #   1.10  15.06.2022   dcasota  Bugfixing, substitution of Azure CLI commands with Azure Powershell commands, latest Photon OS release added
 #   1.11  11.07.2022   dcasota  text changes
+#   1.12  21.07.2022   dcasota  bugfixing
 #
 # .PARAMETER DownloadURL
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
@@ -58,25 +57,59 @@
 #        Photon OS 2.0 GA Azure VHD cloud-init provisioning  https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
 #        Photon OS 2.0 RC Azure VHD - gz file                https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz
 #        Photon OS 2.0 Beta Azure VHD                        https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd
-# .PARAMETER Location
+# .PARAMETER LocationName
 #   Azure location name where to create or lookup the resource group
 # .PARAMETER ResourceGroupName
-#   Azure resourcegroup name
+#   resource group name
+# .PARAMETER RuntimeId
+#   random id used in names
 # .PARAMETER StorageAccountName
-#   Azure storage account name
+#   storage account name
+# .PARAMETER StorageKind
+#   storage kind
 # .PARAMETER StorageAccountType
-#   Storage AccountType
-# .PARAMETER HelperVMContainerName
-#   Azure storage container name
-# .PARAMETER Imagename
-#   Azure image name for the uploaded VMware Photon OS
+#   storage account type
 # .PARAMETER HyperVGeneration
-#   Hyper-V Generation (V1, V2)
+#   Azure HyperVGeneration
+# .PARAMETER Imagename
+#   image name
+# .PARAMETER HelperVMComputerName
+#   helper vm computername
+# .PARAMETER HelperVMName
+#   helper vm name
+# .PARAMETER HelperVMContainerName
+#   helper vm container name
 # .PARAMETER HelperVMDiskName
-#   Name of the HelperVMDiskName in the Image
+#   helper vm disk name
+# .PARAMETER HelperVMPublishername
+#   helper vm os publishername
+# .PARAMETER HelperVMOffername
+#   helper vm os offername
+# .PARAMETER HelperVMSku
+#   helper vm os sku
+# .PARAMETER HelperVMSize
+#   helper vm size
+# .PARAMETER HelperVMNetworkName
+#   helper vm network name
+# .PARAMETER HelperVMSubnetAddressPrefix
+#   helper vm subnet address prefix
+# .PARAMETER HelperVMVNetAddressPrefix
+#   helper vm vnet address prefix
+# .PARAMETER HelperVMnsgName
+#   helper vm nsg name
+# .PARAMETER HelperVMPublicIPDNSName
+#   helper vm public ip dns name
+# .PARAMETER HelperVMNicName
+#   helper vm nic name
+# .PARAMETER HelperVMLocalAdminUser
+#   helper vm local admin user
+# .PARAMETER HelperVMLocalAdminPwd
+#   helper vm local admin pwd
+# .PARAMETER HelperVMsize_TempPath
+#   helper vm size temp path
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz" -ResourceGroupName ph4Rev1lab -Location switzerlandnorth -HyperVGeneration V2
+#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth -HyperVGeneration V2
 #
 #>
 
@@ -99,9 +132,8 @@ param(
 'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
 [String]$DownloadURL="https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz",
 
-
 [Parameter(Mandatory = $true)][ValidateNotNull()]
-[string]$Location,
+[string]$LocationName,
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [string]$ResourceGroupName,
@@ -176,42 +208,59 @@ param(
 [string]$HelperVMsize_TempPath="d:" # $DownloadURL file is downloaded and extracted on this drive inside vm. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
 )
 
-#Allow Tls12 only
-$TLS12Protocol = [System.Net.SecurityProtocolType] 'Tls12'
-[System.Net.ServicePointManager]::SecurityProtocol = $TLS12Protocol
 
-# check Azure Powershell
-# https://github.com/Azure/azure-powershell/issues/13530
-# https://github.com/Azure/azure-powershell/issues/13337
-$check=get-module -ListAvailable | where-object {$_ -ilike 'Az.*'}
-if ([Object]::ReferenceEquals($check,$null))
+# Specify Tls
+$TLSProtocols = [System.Net.SecurityProtocolType]::'Tls13',[System.Net.SecurityProtocolType]::'Tls12'
+[System.Net.ServicePointManager]::SecurityProtocol = $TLSProtocols
+
+# Check Azure Powershell
+try
 {
-    install-module -name Az -MinimumVersion "8.0" -ErrorAction SilentlyContinue
-    write-output "Please restart the session."
-    break
+	# $version = (get-installedmodule -name Az).version # really slow
+    $version = (get-command get-azcontext).Version.ToString()
+	if ($version -lt "2.8")
+	{
+		write-output "Updating Azure Powershell ..."	
+		update-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
+		write-output "Please restart Powershell session."
+		break			
+	}
 }
-else
+catch
 {
-    update-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
+    write-output "Installing Azure Powershell ..."
+    install-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
+    write-output "Please restart Powershell session."
+    break	
 }
 
-$azconnect=get-azcontext -ErrorAction SilentlyContinue
+$azconnect=$null
+try
+{
+    # Already logged-in?
+    $subscriptionId=(get-azcontext).Subscription.Id
+    $TenantId=(get-azcontext).Tenant.Id
+    # set subscription
+    select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+    $azconnect=get-azcontext -ErrorAction SilentlyContinue
+}
+catch {}
 if ([Object]::ReferenceEquals($azconnect,$null))
 {
-    $azconnect=connect-azaccount -devicecode
+    try
+    {
+        $azconnect=connect-azaccount -devicecode
+        $subscriptionId=(get-azcontext).Subscription.Id
+        $TenantId=(get-azcontext).Tenant.Id
+        # set subscription
+        select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+    }
+    catch
+    {
+        write-output "Azure Powershell login required."
+        break
+    }
 }
-
-
-if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
-{
-    write-output "Azure Powershell login required."
-    break
-}
-
-#Set the context to the subscription Id where Managed Disk exists and where virtual machine will be created if necessary
-$subscriptionId=(get-azcontext).Subscription.Id
-# set subscription
-select-AzSubscription -Subscription $subscriptionId
 
 
 # Uri + Blobname
@@ -346,7 +395,7 @@ if (Test-Path $vhdfile)
 	$azcontext=get-azcontext
 	if ($azcontext)
 	{
-		$result = get-azresourcegroup -name $ResourceGroupName -Location $Location -ErrorAction SilentlyContinue
+		$result = get-azresourcegroup -name $ResourceGroupName -Location $LocationName -ErrorAction SilentlyContinue
 		if ($result)
 		{
 			$storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
@@ -373,17 +422,17 @@ if (Test-Path $vhdfile)
 '@
 
 # create lab resource group if it does not exist
-$result = get-azresourcegroup -name $ResourceGroupName -Location $Location -ErrorAction SilentlyContinue
+$result = get-azresourcegroup -name $ResourceGroupName -Location $LocationName -ErrorAction SilentlyContinue
 if ( -not $($result))
 {
-    New-AzResourceGroup -Name $ResourceGroupName -Location $Location
+    New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName
 }
 
 # storageaccount
 $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
 if ( -not $($storageaccount))
 {
-	$storageaccount=New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $Location -Kind $StorageKind -SkuName $StorageAccountType -ErrorAction SilentlyContinue
+	$storageaccount=New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind $StorageKind -SkuName $StorageAccountType -ErrorAction SilentlyContinue
 	if ( -not $($storageaccount))
     {
         write-output "Storage account has not been created. Check if the name is already taken."
@@ -417,7 +466,7 @@ if (-not $($Disk))
     		-Access Allow -Protocol Tcp -Direction Inbound -Priority 110 `
     		-SourceAddressPrefix Internet -SourcePortRange * `
     		-DestinationAddressPrefix * -DestinationPortRange 3389
-    		$nsg = New-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -Location $Location -SecurityRules $rdpRule1
+    		$nsg = New-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -Location $LocationName -SecurityRules $rdpRule1
     	}
 
     	# set network if not already set
@@ -425,12 +474,11 @@ if (-not $($Disk))
     	if ( -not $($vnet))
     	{
     		$ServerSubnet  = New-AzVirtualNetworkSubnetConfig -Name frontendSubnet -AddressPrefix $HelperVMSubnetAddressPrefix -NetworkSecurityGroup $nsg
-    		$vnet = New-AzVirtualNetwork -Name $HelperVMNetworkName -ResourceGroupName $ResourceGroupName -Location $Location -AddressPrefix $HelperVMVnetAddressPrefix -Subnet $ServerSubnet
+    		$vnet = New-AzVirtualNetwork -Name $HelperVMNetworkName -ResourceGroupName $ResourceGroupName -Location $LocationName -AddressPrefix $HelperVMVnetAddressPrefix -Subnet $ServerSubnet
     		$vnet | Set-AzVirtualNetwork
     	}
 
-		# create virtual machine
-		# -----------
+		# create the temporary virtual machine
 
 		# virtual machine local admin setting
 		$VMLocalAdminSecurePassword = ConvertTo-SecureString $HelperVMLocalAdminPwd -AsPlainText -Force
@@ -440,9 +488,9 @@ if (-not $($Disk))
 		$nic=get-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
 		if ( -not $($nic))
 		{
-			$pip = New-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Location $Location -Name $HelperVMPublicIPDNSName -AllocationMethod Static -IdleTimeoutInMinutes 4
+			$pip = New-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Location $LocationName -Name $HelperVMPublicIPDNSName -AllocationMethod Static -IdleTimeoutInMinutes 4
 			# Create a virtual network card and associate with public IP address and NSG
-			$nic = New-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -Location $Location `
+			$nic = New-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -Location $LocationName `
 				-SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
 		}
 
@@ -451,9 +499,9 @@ if (-not $($Disk))
 		Add-AzVMNetworkInterface -Id $nic.Id
 
         # Get-AzVMImage -Location switzerlandnorth -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2019-datacenter-with-containers-smalldisk-g2
-        $productversion=((get-azvmimage -Location $Location -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku)[(get-azvmimage -Location $Location -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku).count -1 ]).version
+        $productversion=((get-azvmimage -Location $LocationName -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku)[(get-azvmimage -Location $LocationName -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku).count -1 ]).version
 
-		$vmimage= get-azvmimage -Location $Location -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion
+		$vmimage= get-azvmimage -Location $LocationName -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion
 		if (-not ([Object]::ReferenceEquals($vmimage,$null)))
 		{
 			if (-not ([Object]::ReferenceEquals($vmimage.PurchasePlan,$null)))
@@ -470,7 +518,7 @@ if (-not $($Disk))
 			$vmConfig | Set-AzVMBootDiagnostic -Disable
 
 			# Create the virtual machine		
-			New-AzVM -ResourceGroupName $ResourceGroupName -Location $Location -VM $vmConfig
+			New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
 			
 			$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName			
 			Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName			
@@ -496,7 +544,7 @@ if (-not $($Disk))
 		$tmp='$tmppath="'+$HelperVMsize_TempPath+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$tenant="'+$((get-azcontext).tenant.id)+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$ResourceGroupName="'+$ResourceGroupName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$Location="'+$Location+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+		$tmp='$LocationName="'+$LocationName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$StorageAccountName="'+$StorageAccountName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$ImageName="'+$ImageName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
 		$tmp='$HelperVMContainerName="'+$HelperVMContainerName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
@@ -507,7 +555,7 @@ if (-not $($Disk))
 
         # Extensions preparation
 		$Blobtmp="importazcontext.ps1"
-        $Extensions = Get-AzVMExtensionImage -Location $Location -PublisherName "Microsoft.Compute" -Type "CustomScriptExtension"
+        $Extensions = Get-AzVMExtensionImage -Location $LocationName -PublisherName "Microsoft.Compute" -Type "CustomScriptExtension"
         $ExtensionPublisher= $Extensions[$Extensions.count-1].PublisherName
         $ExtensionType = $Extensions[$Extensions.count-1].Type
         $ExtensionVersion = (($Extensions[$Extensions.count-1].Version)[0..2]) -join ""
@@ -523,14 +571,14 @@ if (-not $($Disk))
         $commandToExecute="powershell.exe Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force ; powershell install-module -name Az -force -ErrorAction SilentlyContinue; shutdown.exe /r /t 0"
         $ScriptSettings = @{}
         $ProtectedSettings = @{"storageAccountName" = $StorageAccountName; "storageaccountkey" = ($storageaccountkey[0]).value ; "commandToExecute" = $commandToExecute }
-        Set-AzVMExtension -ResourceGroupName $ResourceGroupName -Location $Location -VMName $HelperVMName -Name $ExtensionType -Publisher $ExtensionPublisher -ExtensionType $ExtensionType -TypeHandlerVersion $ExtensionVersion -Settings $ScriptSettings -ProtectedSettings $ProtectedSettings
+        Set-AzVMExtension -ResourceGroupName $ResourceGroupName -Location $LocationName -VMName $HelperVMName -Name $ExtensionType -Publisher $ExtensionPublisher -ExtensionType $ExtensionType -TypeHandlerVersion $ExtensionVersion -Settings $ScriptSettings -ProtectedSettings $ProtectedSettings
      	Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -Name $ExtensionType -force -ErrorAction SilentlyContinue
         # wait for the reboot
         start-sleep 15
 
         # Run scriptfile
         $Run = "C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.12\Downloads\0\$BlobTmp"
-        Set-AzVMCustomScriptExtension -Name "CustomScriptExtension" -Location $Location -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -StorageAccountName $StorageAccountName -ContainerName $HelperVMContainerName -FileName $BlobTmp -Run $Run
+        Set-AzVMCustomScriptExtension -Name "CustomScriptExtension" -Location $LocationName -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -StorageAccountName $StorageAccountName -ContainerName $HelperVMContainerName -FileName $BlobTmp -Run $Run
 	}
 }
 
@@ -541,7 +589,7 @@ if (-not $($Disk))
 {
     $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${HelperVMContainerName}/${ImageName}"
     $storageAccountId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$StorageAccountName"
-    $diskConfig = New-AzDiskConfig -AccountType $StorageAccountType -Location $Location -HyperVGeneration $HyperVGeneration -CreateOption Import -StorageAccountId $storageAccountId -SourceUri $urlOfUploadedVhd
+    $diskConfig = New-AzDiskConfig -AccountType $StorageAccountType -Location $LocationName -HyperVGeneration $HyperVGeneration -CreateOption Import -StorageAccountId $storageAccountId -SourceUri $urlOfUploadedVhd
     New-AzDisk -Disk $diskConfig -ResourceGroupName $resourceGroupName -DiskName $HelperVMDiskName -ErrorAction SilentlyContinue
 }
 
@@ -551,7 +599,7 @@ if (-not $($Image))
     $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
     if (-not ([Object]::ReferenceEquals($Disk,$null)))
     {
-        $imageconfig=new-azimageconfig -location $Location -HyperVGeneration $HyperVGeneration
+        $imageconfig=new-azimageconfig -location $LocationName -HyperVGeneration $HyperVGeneration
         $imageConfig = Set-AzImageOsDisk -Image $imageConfig -OsState Generalized -OsType Linux -ManagedDiskId $Disk.ID
         new-azimage -ImageName $ImageName -ResourceGroupName $ResourceGroupName -image $imageconfig -ErrorAction SilentlyContinue
     }
@@ -614,5 +662,3 @@ if (-not ([Object]::ReferenceEquals($obj,$null)))
 {
 	Remove-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Force -ErrorAction SilentlyContinue
 }
-
-#}

@@ -25,7 +25,8 @@
 # 0.51  21.03.2021   dcasota  List available Azure locations updated
 # 0.6   07.04.2021   dcasota  Minor fixing
 # 0.7   11.07.2022   dcasota  Bugfixing, substitution of Azure CLI commands with Azure Powershell commands, text changes
-#
+# 0.71  12.07.2022   dcasota  Bugfixing
+# 0.72  21.07.2022   dcasota  Bugfixing
 #
 # .PARAMETER
 # Parameter LocationName
@@ -34,28 +35,30 @@
 #    Azure resource group name of the Azure image
 # Parameter Imagename
 #    Azure image name for the uploaded VMware Photon OS
+# Parameter ResourceGroupNameImage
+#    Azure resource group name of the Azure Image
+# Parameter RuntimeId
+#    Generates a random id used in names
+# Parameter ImageName
+#    Azure Image name
 # Parameter ResourceGroupName
-#    Azure resource group name
+#    Azure resource group name of the VM
 # Parameter VMName
 #    Name of the virtual machine to be created
 # Parameter StorageAccountName
 #    Azure storage account name
 # Parameter ContainerName
 #    Azure storage container name
-# Parameter BlobName
-#    Azure Blob Name for the Photon OS .vhd
-# Parameter VMName
-#    Name of the virtual machine to be created
 # Parameter VMSize
 #    Azure virtual machine size offering
 # Parameter nsgName
 #    network security group name
 # Parameter NetworkName
-#    network name
-# Parameter VnetAddressPrefix
-#    virtual network address. Use cidr format, eg. "192.168.0.0/16"
+#    vnet name
 # Parameter SubnetAddressPrefix
 #    subnet address. Use cidr format, eg. "192.168.0.0/24"
+# Parameter VnetAddressPrefix
+#    virtual network address. Use cidr format, eg. "192.168.0.0/16"
 # Parameter Computername
 #    computername
 # Parameter NICName
@@ -66,7 +69,7 @@
 #    virtual machine local admin credential
 #
 # .EXAMPLE
-#    ./create-AzVM_FromImage-PhotonOS.ps1 -Location switzerlandnorth -ResourceGroupNameImage ph4rev2 -ImageName photon-azure-4.0-c001795b8_V2.vhd -ResourceGroupName ph4rev2 -VMName ph4rev2 -VMLocalAdminCredential $(Get-credential -message 'Specify a Photon OS local admin username and password. Password must be 12-23 chars long.')
+#    ./create-AzVM_FromImage-PhotonOS.ps1 -Location switzerlandnorth -ResourceGroupNameImage PhotonOSTemplates -ImageName photon-azure-4.0-c001795b8_V2.vhd -ResourceGroupName ph4rev2 -VMName ph01 -VMLocalAdminCredential $(Get-credential -message 'Specify a Photon OS local admin username and password. Password must be 12-23 chars long.')
 
 [CmdletBinding()]
 param(
@@ -95,7 +98,7 @@ param(
 [string]$ContainerName = "${RuntimeId}disks",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-$VMSize = "Standard_B1ms",
+$VMSize = "Standard_E4s_v3",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$nsgName = "${RuntimeId}nsg",
@@ -113,49 +116,69 @@ $VMSize = "Standard_B1ms",
 [string]$ComputerName = $VMName,
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-[string]$NICName = "${RuntimeId}nic"
+[string]$NICName = "${RuntimeId}nic",
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
-[string]$PublicIPDNSName="{RuntimeId}dns"
+[string]$PublicIPDNSName="${RuntimeId}dns",
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
-$VMLocalAdminCredential = Get-Credential -Message "Specify a Photon OS local admin username and password. Password must be 12-23 chars long."
+[System.Management.Automation.PSCredential]
+[System.Management.Automation.Credential()]$VMLocalAdminCredential = $(Get-credential -Message 'Specify a Photon OS local admin username and password. Username must be all in small letters. Password must be 12-23 chars long.')
 
 )
 
+# Specify Tls
+$TLSProtocols = [System.Net.SecurityProtocolType]::'Tls13',[System.Net.SecurityProtocolType]::'Tls12'
+[System.Net.ServicePointManager]::SecurityProtocol = $TLSProtocols
 
-# check Azure Powershell
-# https://github.com/Azure/azure-powershell/issues/13530
-# https://github.com/Azure/azure-powershell/issues/13337
-$check=get-module -ListAvailable | where-object {$_ -ilike 'Az.*'}
-if ([Object]::ReferenceEquals($check,$null))
+# Check Azure Powershell
+try
 {
-    install-module -name Az -MinimumVersion "8.0" -ErrorAction SilentlyContinue
-    write-host "Please restart the script."
-    exit
+	# $version = (get-installedmodule -name Az).version # really slow
+    $version = (get-command get-azcontext).Version.ToString()
+	if ($version -lt "2.8")
+	{
+		write-output "Updating Azure Powershell ..."	
+		update-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
+		write-output "Please restart Powershell session."
+		break			
+	}
 }
-else
+catch
 {
-    update-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
+    write-output "Installing Azure Powershell ..."
+    install-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
+    write-output "Please restart Powershell session."
+    break	
 }
 
-$azconnect=get-azcontext -ErrorAction SilentlyContinue
+$azconnect=$null
+try
+{
+    # Already logged-in?
+    $subscriptionId=(get-azcontext).Subscription.Id
+    $TenantId=(get-azcontext).Tenant.Id
+    # set subscription
+    select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+    $azconnect=get-azcontext -ErrorAction SilentlyContinue
+}
+catch {}
 if ([Object]::ReferenceEquals($azconnect,$null))
 {
-    $azconnect=connect-azaccount -devicecode
+    try
+    {
+        $azconnect=connect-azaccount -devicecode
+        $subscriptionId=(get-azcontext).Subscription.Id
+        $TenantId=(get-azcontext).Tenant.Id
+        # set subscription
+        select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+    }
+    catch
+    {
+        write-output "Azure Powershell login required."
+        break
+    }
 }
-
-
-if (!(Get-variable -name azconnect -ErrorAction SilentlyContinue))
-{
-    write-host "Azure Powershell login required."
-    break
-}
-
-#Set the context to the subscription Id where Managed Disk exists and where virtual machine will be created if necessary
-$subscriptionId=(get-azcontext).Subscription.Id
-# set subscription
-select-AzSubscription -Subscription $subscriptionId
 
 # Verify virtual machine doesn't exist
 [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
@@ -241,5 +264,14 @@ $VM| Set-AzVMBootDiagnostic -Disable
 
 New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $VM
 
-$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName
-Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName
+[Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
+if ($VM)
+{
+	Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName		
+	Update-AzVM -VM $VM -ResourceGroupName $ResourceGroupName
+}
+else
+{
+	write-Output "Error: Virtual machine hasn't been created."
+	break
+}    
