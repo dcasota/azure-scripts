@@ -39,7 +39,7 @@
 #   1.01  08.11.2021   dcasota  Enforced Azure powershell + cli version update, temp vm scheduled task bug fix
 #   1.10  15.06.2022   dcasota  Bugfixing, substitution of Azure CLI commands with Azure Powershell commands, latest Photon OS release added
 #   1.11  11.07.2022   dcasota  text changes
-#   1.12  21.07.2022   dcasota  bugfixing
+#   1.12  17.08.2022   dcasota  bugfixing
 #
 # .PARAMETER DownloadURL
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
@@ -450,7 +450,7 @@ if ( -not $($result))
     new-azstoragecontainer -Name ${HelperVMContainerName} -Context $storageaccount.Context -ErrorAction SilentlyContinue -Permission Blob
 }
 
-$Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
+$Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.Name -ieq $HelperVMDiskName)}
 if (-not $($Disk))
 {
 	# a temporary virtual machine is necessary because inside it downloads Photon and uploads the extracted disk as image base.
@@ -520,7 +520,7 @@ if (-not $($Disk))
 			# Create the virtual machine		
 			New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
 			
-			$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName			
+			$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName			
 			Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName			
 		}
 	}
@@ -584,7 +584,7 @@ if (-not $($Disk))
 
 if ((test-path($contextfile))) { remove-item -path ($contextfile) -force -ErrorAction SilentlyContinue }
 
-$Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
+$Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.Name -ieq $HelperVMDiskName)}
 if (-not $($Disk))
 {
     $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${HelperVMContainerName}/${ImageName}"
@@ -593,10 +593,10 @@ if (-not $($Disk))
     New-AzDisk -Disk $diskConfig -ResourceGroupName $resourceGroupName -DiskName $HelperVMDiskName -ErrorAction SilentlyContinue
 }
 
-$Image=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.name -ieq $Imagename)}
+$Image=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.name -ieq $Imagename)}
 if (-not $($Image))
 {
-    $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
+    $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.Name -ieq $HelperVMDiskName)}
     if (-not ([Object]::ReferenceEquals($Disk,$null)))
     {
         $imageconfig=new-azimageconfig -location $LocationName -HyperVGeneration $HyperVGeneration
@@ -606,7 +606,7 @@ if (-not $($Image))
 }
 
 # Delete virtual machine with its objects
-$AzImage=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.name -ieq $Imagename)}
+$AzImage=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.name -ieq $Imagename)}
 if ([Object]::ReferenceEquals($AzImage,$null))
 {
     write-Output "Error: Image creation failed."
