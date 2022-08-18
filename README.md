@@ -107,6 +107,9 @@ It installs Powershell Az module if necessary on your local computer. Afterwards
 
 # Archive
 
+```movediskToRegion.ps1```
+Moves/copies a disk from one region to another.
+
 ```Ubuntu18.04-Install.ps1```
 Deploys the Azure template Canonical Ubuntu 18.04 Server.
 
