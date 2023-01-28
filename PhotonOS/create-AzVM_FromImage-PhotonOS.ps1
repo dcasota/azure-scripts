@@ -27,6 +27,7 @@
 # 0.7   11.07.2022   dcasota  Bugfixing, substitution of Azure CLI commands with Azure Powershell commands, text changes
 # 0.71  12.07.2022   dcasota  Bugfixing
 # 0.72  21.07.2022   dcasota  Bugfixing
+# 0.73  28.01.2023   dcasota  Bugfixing
 #
 # .PARAMETER
 # Parameter LocationName
@@ -261,16 +262,13 @@ $VM = Set-AzVMOperatingSystem -VM $VM -Linux -ComputerName $ComputerName -Creden
 $VM = Add-AzVMNetworkInterface -VM $VM -Id $nic.Id
 $VM = $VM | set-AzVMSourceImage -Id (get-azimage -ResourceGroupName $ResourceGroupNameImage -ImageName $ImageName).Id
 $VM| Set-AzVMBootDiagnostic -Disable
+$VM| Set-AzVMBootDiagnostic -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName
+sleep -Milliseconds 5000
 
 New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $VM
 
 [Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
-if ($VM)
-{
-	Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName		
-	Update-AzVM -VM $VM -ResourceGroupName $ResourceGroupName
-}
-else
+if (!($VM))
 {
 	write-Output "Error: Virtual machine hasn't been created."
 	break
