@@ -51,6 +51,46 @@ Have a look to the optional script parameter values. As example, with VMLocalAdm
 
 The script checks/creates resource group, virtual network, storage account/container/blob and the virtual machine.
 
+December 1st 2025:
+A deployed VM from photon-azure-5.0-9e778f409_V2.vhd has `/sbin` no in the PATH variables.
+The following scripts fixes the issue.
+
+```
+Bash#!/bin/bash
+
+# Script to make PATH=$PATH:/sbin persistent system-wide by adding it to /etc/profile
+# WARNING: This modifies a system file and affects all users. Run with sudo.
+
+# Check if not run as root
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script must be run with sudo for system-wide changes."
+    exit 1
+fi
+
+# Check if the line already exists in /etc/profile
+if grep -q "export PATH=\$PATH:/sbin" /etc/profile; then
+    echo "The PATH modification is already present in /etc/profile."
+else
+    # Append the export line to /etc/profile
+    echo "export PATH=\$PATH:/sbin" >> /etc/profile
+    echo "Added PATH modification to /etc/profile."
+fi
+
+# Source /etc/profile to apply changes immediately (for current session)
+source /etc/profile
+
+# Verify the change
+echo "Current PATH: $PATH"
+echo "Changes will persist across reboots for all users."
+echo "Note: New login sessions or reboots may be required for other users to see the change."
+```
+To use this script:
+
+Save it to a file, e.g., make_path_persistent_system.sh.
+Make it executable: chmod +x make_path_persistent_system.sh.
+Run it with sudo: sudo ./make_path_persistent_system.sh.
+
+
 ## create-AzImage-PhotonOS-AllVersions.ps1
 
 This is a test script which creates the V1 and V2 Azure Images of all VMware Photon OS releases. Just start it. The creation of all versions takes a while.
