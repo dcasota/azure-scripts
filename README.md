@@ -56,7 +56,7 @@ A deployed VM from photon-azure-5.0-9e778f409_V2.vhd has `/sbin` no in the PATH 
 The following scripts fixes the issue.
 
 ```
-Bash#!/bin/bash
+#!/bin/bash
 
 # Script to make PATH=$PATH:/sbin persistent system-wide by adding it to /etc/profile
 # WARNING: This modifies a system file and affects all users. Run with sudo.
