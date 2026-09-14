@@ -5,24 +5,30 @@
 #  VMware Photon OS comes with multi-cloud support, use-case centric flavors, x86_64 and arm64 support and it supports virtual hardware generations.
 #  On Azure actually, there are no official VMware Photon OS images. This may change. For the moment, this helper script deploys an Azure image of Photon OS.
 #
-#  It creates an Azure image of VMware Photon OS by iso or vhd download url. The resource group name is a mandatory parameter.
+#  It creates an Azure image of VMware Photon OS by an iso or vhd file. The file is given with -FilePath as web url or as local file path.
+#  The resource group name is a mandatory parameter.
 #  Without specifying further parameters, an Azure Arm64 image of the Photon OS 5.0 GA aarch64 iso is created in westeurope.
 #
 #  First, the script checks the Az module and triggers an Azure login using the device code method. You might see a similar message to
 #    WARNUNG: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
 #  The Azure Powershell output shows up as warning (see above). Open a webbrowser, and fill in the code given by the Azure Powershell login output.
 #
-#  Iso url (x86_64 and aarch64):
+#  Iso file (x86_64 and aarch64):
 #    A temporary Ubuntu 22.04 virtual machine (Arm64 or x64, depending on the helper VM size) is created with an empty managed data disk attached.
 #    Inside the virtual machine, the data disk is configured as Ventoy bootable disk, the Photon OS iso file is downloaded onto it, and the boot configuration
 #    is patched for the Azure serial console. The data disk is detached and published as Azure Compute Gallery image version (OsState Specialized).
 #    A VM created from that image boots the Photon OS installer. Managed images do not support Arm64, hence the Azure Compute Gallery.
 #    The gallery is named PhotonOS_<location>, the image definition looks like "photon-5.0-dde71ec57.aarch64_iso_V2".
 #
-#  Vhd url (x86_64 only):
+#  Vhd file (x86_64 only):
 #    A temporary Windows Server 2022 virtual machine downloads and extracts the Photon OS vhd, uploads it as page blob, and a managed image is created.
 #    The name of the Azure image looks like "photon-azure-5.0-dde71ec57.x86_64_V2.vhd".
 #    See Azure virtual hardware generation related weblink https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
+#
+#  Local file:
+#    A local file is uploaded to a private, temporary blob container of the storage account StorageAccountName. The helper VM downloads it with a
+#    read-only SAS url. The SHA256 of a local iso file is verified inside the helper VM. The temporary blob only exists until the Azure image is ready,
+#    it is deleted at the end of the script in any case, together with the storage account if the script created it.
 #
 #  The helper virtual machine size and the vCPU quota are checked before any resource is created. The cleanup deletes the temporary resources.
 #
@@ -31,6 +37,7 @@
 #    - Az.Compute 9.0 or higher
 #    - Azure account with Virtual Machine contributor role
 #    - vCPU quota for the helper VM size. Standard_D2pls_v5 (Arm64 default) requires the DPLSv5 family quota in the target location.
+#    - Photon OS aarch64 kernels are built without CONFIG_HYPERV. The installer of such an iso does not see any disk on an Azure Arm64 VM.
 #
 #
 # .NOTES
@@ -62,9 +69,12 @@
 #                               Default Photon OS 5.0 GA aarch64 iso, helper VM size Standard_D2pls_v5, location westeurope (aarch64) or switzerlandnorth.
 #                               Bugfix serial console (Ventoy conf_replace of /boot/grub2/grub.cfg), private blob container, generated helper VM password,
 #                               vm size and quota preflight check, rerun detection, cleanup on failure.
+#   2.20  14.09.2026   dcasota  New parameter FilePath for web urls and local files. Local files are uploaded to a temporary blob, which is deleted at the end.
+#                               DownloadURL is deprecated. Image and disk names are shortened to the Azure limits.
 #
-# .PARAMETER DownloadURL
-#   Specifies the URL of the VMware Photon OS .iso file
+# .PARAMETER FilePath
+#   Web url (http or https) or local file path of a VMware Photon OS .iso, .vhd, .vhd.gz or .vhd.tar.gz file.
+#   The architecture is taken from the file name (aarch64 or x86_64). Examples of web urls:
 #        Photon OS 5.0 GA Full ISO arm64                     https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso
 #        Photon OS 5.0 GA Minimal ISO arm64                  https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.aarch64.iso
 #        Photon OS 5.0 GA Full ISO x86_64                    https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.x86_64.iso
@@ -86,9 +96,7 @@
 #        Photon OS 4.0 GA Full ISO arm64                     https://packages.vmware.com/photon/4.0/GA/iso/photon-4.0-1526e30ba-aarch64.iso
 #        Photon OS 4.0 GA Minimal ISO x86_64                 https://packages.vmware.com/photon/4.0/GA/iso/photon-minimal-4.0-1526e30ba.iso
 #        Photon OS 4.0 GA Real-Time ISO x86_64               https://packages.vmware.com/photon/4.0/GA/iso/photon-rt-4.0-1526e30ba.iso
-
-#   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
-#      VMware Photon OS build download links:
+#      VMware Photon OS Azure vhd download links:
 #        Photon OS 5.0 GA Azure VHD                          https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz
 #        Photon OS 5.0 RC Azure VHD                          https://packages.vmware.com/photon/5.0/RC/azure/photon-azure-5.0-4d5974638.x86_64.vhd.tar.gz
 #        Photon OS 5.0 Beta Azure VHD                        https://packages.vmware.com/photon/5.0/Beta/azure/photon-azure-5.0-9e778f409.vhd.tar.gz
@@ -105,41 +113,47 @@
 #        Photon OS 2.0 GA Azure VHD cloud-init provisioning  https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
 #        Photon OS 2.0 RC Azure VHD - gz file                https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz
 #        Photon OS 2.0 Beta Azure VHD                        https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd
+# .PARAMETER DownloadURL
+#   Deprecated, use FilePath. Accepts the download links listed above.
 # .PARAMETER LocationName
-#   Azure location name where to create or lookup the resources. Default is westeurope for aarch64 urls, otherwise switzerlandnorth.
+#   Azure location name where to create or lookup the resources. Default is westeurope for aarch64 files, otherwise switzerlandnorth.
 # .PARAMETER ResourceGroupName
 #   resource group name
 # .PARAMETER RuntimeId
 #   random id used in names
 # .PARAMETER StorageAccountName
-#   storage account name (vhd url only)
+#   storage account name for vhd files and for the temporary blob of local files
 # .PARAMETER StorageKind
-#   storage kind (vhd url only)
+#   storage kind
 # .PARAMETER StorageAccountType
-#   storage account type (vhd url only)
+#   storage account type
 # .PARAMETER HyperVGeneration
 #   Azure HyperVGeneration. Arm64 supports V2 only.
 # .PARAMETER HelperVMSize
-#   Size of the temporary helper VM. Default is Standard_D2pls_v5 for aarch64 iso urls, Standard_D2s_v3 for x86_64 iso urls and Standard_E2s_v3 for vhd urls.
+#   Size of the temporary helper VM. Default is Standard_D2pls_v5 for aarch64 iso files, Standard_D2s_v3 for x86_64 iso files and Standard_E2s_v3 for vhd files.
 # .PARAMETER HelperVMDiskSizeGB
-#   Size of the Ventoy data disk (iso url only)
+#   Size of the Ventoy data disk (iso file only)
 # .PARAMETER GalleryName
-#   Azure Compute Gallery name (iso url only). Default is PhotonOS_<LocationName>.
+#   Azure Compute Gallery name (iso file only). Default is PhotonOS_<LocationName>.
 # .PARAMETER VentoyVersion
-#   Ventoy release used to make the data disk bootable (iso url only)
+#   Ventoy release used to make the data disk bootable (iso file only)
 # .PARAMETER SkipCleanup
-#   Keep the helper VM and its resources, e.g. for troubleshooting
+#   Keep the helper VM and its resources, e.g. for troubleshooting. The temporary blob of a local file is deleted anyway.
 #
 # .EXAMPLE
 #    ./create-AzImage-PhotonOS.ps1 -ResourceGroupName PhotonOSTemplates
-#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso" -ResourceGroupName PhotonOSTemplates -LocationName westeurope -HelperVMSize Standard_D2pls_v5
-#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth -HyperVGeneration V2
+#    ./create-AzImage-PhotonOS.ps1 -FilePath "https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso" -ResourceGroupName PhotonOSTemplates -LocationName westeurope -HelperVMSize Standard_D2pls_v5
+#    ./create-AzImage-PhotonOS.ps1 -FilePath "c:\users\dcaso\Downloads\Ph-Builds\photon-minimal-5.0-dde71ec57.x86_64.iso" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth
+#    ./create-AzImage-PhotonOS.ps1 -FilePath "https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth -HyperVGeneration V2
 #
 #>
 
 [CmdletBinding()]
 param(
-[Parameter(Mandatory = $false)][ValidateNotNull()]
+[Parameter(Mandatory = $false)][ValidateNotNullOrEmpty()]
+[string]$FilePath="https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso",
+
+[Parameter(Mandatory = $false)]
 [ValidateSet(
 'https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso', `
 'https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.aarch64.iso', `
@@ -165,7 +179,7 @@ param(
 'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz', `
 'https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz', `
 'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
-[String]$DownloadURL="https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso",
+[String]$DownloadURL,
 
 [Parameter(Mandatory = $false)]
 [string]$LocationName,
@@ -206,15 +220,40 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Download url processing
-$Uri = [System.Uri]::UnescapeDataString($DownloadURL)
-$DownloadFileName = Split-Path -Path $Uri -Leaf
+# DownloadURL is deprecated and maps to FilePath
+if ($PSBoundParameters.ContainsKey('DownloadURL'))
+{
+    if ($PSBoundParameters.ContainsKey('FilePath')) { throw "Specify either -FilePath or the deprecated -DownloadURL, not both." }
+    Write-Warning "-DownloadURL is deprecated. Use -FilePath."
+    $FilePath = $DownloadURL
+}
+
+# File path processing: web url or local file
+if ($FilePath -match '^https?://')
+{
+    $IsLocalFile = $false
+    $Uri = $FilePath
+    $DownloadFileName = [System.Uri]::UnescapeDataString(([System.Uri]$FilePath).AbsolutePath.Split('/')[-1])
+}
+else
+{
+    if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) { throw "File $FilePath not found." }
+    $IsLocalFile = $true
+    $LocalFile = Get-Item -LiteralPath $FilePath
+    $DownloadFileName = $LocalFile.Name
+    # a read-only SAS url of the temporary blob, set after the upload
+    $Uri = $null
+}
 $IsIso = $DownloadFileName.ToLower().EndsWith('.iso')
+if (-not ($IsIso -or ($DownloadFileName -match '\.(vhd|vhd\.gz|tar\.gz)$')))
+{
+    throw "$DownloadFileName is not a supported file type (.iso, .vhd, .vhd.gz, .vhd.tar.gz, .tar.gz)."
+}
 if ($DownloadFileName -match '[.-]aarch64\.(iso|vhd\.tar\.gz)$') { $Architecture = 'Arm64' } else { $Architecture = 'x64' }
 
 if ($Architecture -eq 'Arm64')
 {
-    if (-not $IsIso) { throw "Only Photon OS aarch64 .iso urls are supported. There is no aarch64 Azure vhd." }
+    if (-not $IsIso) { throw "Only Photon OS aarch64 .iso files are supported. There is no aarch64 Azure vhd." }
     if ($PSBoundParameters.ContainsKey('HyperVGeneration') -and ($HyperVGeneration -ne 'V2')) { throw "Azure Arm64 virtual machines support HyperVGeneration V2 only." }
     $HyperVGeneration = 'V2'
 }
@@ -233,16 +272,31 @@ if ([string]::IsNullOrEmpty($HelperVMSize))
 
 if ([string]::IsNullOrEmpty($GalleryName)) { $GalleryName = "PhotonOS_${LocationName}" }
 
+
+function Get-AzSafeName([string]$Name, [int]$MaxLength)
+{
+    # Azure image, gallery and disk names allow letters, digits, '.', '_' and '-' with a limited length.
+    # Longer names, e.g. of local builds, are shortened with a hash suffix to stay unique.
+    $safe = ($Name -replace '[^A-Za-z0-9._-]', '-').Trim('.', '-', '_')
+    if ($safe.Length -le $MaxLength) { return $safe }
+    $hash = -join ([System.Security.Cryptography.SHA1]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($Name))[0..3] | ForEach-Object { $_.ToString('x2') })
+    return $safe.Substring(0, $MaxLength - 9).TrimEnd('.', '-', '_') + '-' + $hash
+}
+
 if ($IsIso)
 {
     # Azure Compute Gallery image definition, e.g. photon-5.0-dde71ec57.aarch64_iso_V2, image version 5.0.0
-    $ImageName = ($DownloadFileName -replace '\.iso$', '') + "_iso_" + $HyperVGeneration
-    if ($Uri -match '/photon/(\d+)\.(\d+)/') { $ImageVersion = "$($Matches[1]).$($Matches[2]).0" } else { $ImageVersion = '1.0.0' }
+    $ImageNameSuffix = "_iso_" + $HyperVGeneration
+    $ImageName = (Get-AzSafeName -Name ($DownloadFileName -replace '\.iso$', '') -MaxLength (80 - $ImageNameSuffix.Length)) + $ImageNameSuffix
+    if ($FilePath -match '/photon/(\d+)\.(\d+)/') { $ImageVersion = "$($Matches[1]).$($Matches[2]).0" }
+    elseif ($DownloadFileName -match 'photon-(?:[a-z]+-)*(\d+)\.(\d+)-') { $ImageVersion = "$($Matches[1]).$($Matches[2]).0" }
+    else { $ImageVersion = '1.0.0' }
 }
 else
 {
     # Managed image, e.g. photon-azure-5.0-dde71ec57.x86_64_V2.vhd
-    $ImageName = ($DownloadFileName -split [regex]::Escape('.vhd'))[0] + "_" + $HyperVGeneration + ".vhd"
+    $ImageNameSuffix = "_" + $HyperVGeneration + ".vhd"
+    $ImageName = (Get-AzSafeName -Name ($DownloadFileName -split [regex]::Escape('.vhd'))[0] -MaxLength (80 - $ImageNameSuffix.Length)) + $ImageNameSuffix
 }
 
 # SHA256 of the Ventoy linux package, verified inside the helper VM
@@ -254,7 +308,7 @@ $VentoySha256 = $VentoyKnownSha256[$VentoyVersion]
 if ($IsIso) { $HelperVMComputerName = "ph${RuntimeId}" } else { $HelperVMComputerName = "w2k22${RuntimeId}" }
 $HelperVMName = $HelperVMComputerName
 $HelperVMContainerName = "${HelperVMComputerName}disks"
-$HelperVMDataDiskName = "${ImageName}_${RuntimeId}"
+$HelperVMDataDiskName = (Get-AzSafeName -Name $ImageName -MaxLength (79 - $RuntimeId.Length)) + "_${RuntimeId}"
 $HelperVMNetworkName = "${HelperVMComputerName}vnet"
 $HelperVMSubnetAddressPrefix = "192.168.1.0/24"
 $HelperVMVnetAddressPrefix = "192.168.0.0/16"
@@ -262,7 +316,13 @@ $HelperVMnsgName = "${HelperVMComputerName}nsg"
 $HelperVMPublicIPDNSName="${HelperVMComputerName}dns"
 $HelperVMNICName = "${HelperVMComputerName}nic"
 $HelperVMLocalAdminUser = "photonadmin"
-$HelperVMsize_TempPath="d:" # vhd url only: $DownloadURL file is downloaded and extracted on the temporary disk of the Windows helper VM.
+$HelperVMsize_TempPath="d:" # vhd file only: the file is downloaded and extracted on the temporary disk of the Windows helper VM.
+
+# Temporary blob of a local file
+$SourceContainerName = "${HelperVMComputerName}source"
+$SourceSasValidityHours = 6
+$script:SourceStorageContext = $null
+$script:SourceStorageAccountCreated = $false
 
 
 function New-HelperVMPassword
@@ -351,6 +411,48 @@ function Remove-HelperVMResources
 }
 
 
+function Publish-LocalFile
+{
+    # Uploads the local file to a private, temporary blob container and returns a read-only SAS url for the helper VM.
+    $account = Get-AzResourceOrNull { Get-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName }
+    if (-not $account)
+    {
+        $account = New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind $StorageKind -SkuName $StorageAccountType -AllowBlobPublicAccess $false -MinimumTlsVersion TLS1_2
+        $script:SourceStorageAccountCreated = $true
+    }
+    $script:SourceStorageContext = $account.Context
+    if (-not (Get-AzResourceOrNull { Get-AzStorageContainer -Name $SourceContainerName -Context $account.Context }))
+    {
+        $null = New-AzStorageContainer -Name $SourceContainerName -Context $account.Context -Permission Off
+    }
+    $null = Set-AzStorageBlobContent -File $LocalFile.FullName -Container $SourceContainerName -Blob $DownloadFileName -BlobType Block -Context $account.Context -Force
+    $sas = New-AzStorageBlobSASToken -Container $SourceContainerName -Blob $DownloadFileName -Permission r -Protocol HttpsOnly -ExpiryTime (Get-Date).ToUniversalTime().AddHours($SourceSasValidityHours) -Context $account.Context
+    return $account.Context.BlobEndPoint + $SourceContainerName + '/' + [System.Uri]::EscapeDataString($DownloadFileName) + '?' + $sas.TrimStart('?')
+}
+
+
+function Remove-TemporarySourceBlob
+{
+    # The uploaded local file is only needed until the Azure image is ready.
+    if (-not $script:SourceStorageContext) { return }
+    try
+    {
+        if (Get-AzResourceOrNull { Get-AzStorageContainer -Name $SourceContainerName -Context $script:SourceStorageContext })
+        {
+            $null = Remove-AzStorageContainer -Name $SourceContainerName -Context $script:SourceStorageContext -Force
+            write-output "Removed temporary blob $SourceContainerName/$DownloadFileName."
+        }
+        # The vhd flow removes its storage account itself.
+        if ($script:SourceStorageAccountCreated -and $IsIso)
+        {
+            $null = Remove-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Force
+            write-output "Removed temporary storage account $StorageAccountName."
+        }
+    }
+    catch { Write-Warning "Cleanup of the temporary blob $SourceContainerName/$DownloadFileName failed: $($_.Exception.Message)" }
+}
+
+
 # Specify Tls
 $TLSProtocols = [System.Net.SecurityProtocolType]::'Tls13',[System.Net.SecurityProtocolType]::'Tls12'
 [System.Net.ServicePointManager]::SecurityProtocol = $TLSProtocols
@@ -392,8 +494,8 @@ if ([Object]::ReferenceEquals($azconnect,$null))
     }
 }
 
-write-output "Photon OS $Architecture $(if ($IsIso) {'iso'} else {'vhd'}): $DownloadFileName"
-write-output "Location $LocationName, resource group $ResourceGroupName, HyperVGeneration $HyperVGeneration, helper VM size $HelperVMSize"
+write-output "Photon OS $Architecture $(if ($IsIso) {'iso'} else {'vhd'}) $(if ($IsLocalFile) {'local file'} else {'web url'}): $DownloadFileName"
+write-output "Location $LocationName, resource group $ResourceGroupName, HyperVGeneration $HyperVGeneration, helper VM size $HelperVMSize, image $ImageName"
 
 
 $VentoyBashScript=
@@ -405,6 +507,8 @@ set -euo pipefail
 
 URI='__URI__'
 ISO_NAME='__ISO_NAME__'
+ISO_SHA256='__ISO_SHA256__'
+ISO_SHA256_URL='__ISO_SHA256_URL__'
 ARCHITECTURE='__ARCHITECTURE__'
 HYPERV_GENERATION='__HYPERV_GENERATION__'
 VENTOY_VERSION='__VENTOY_VERSION__'
@@ -467,13 +571,16 @@ else
     mount.exfat-fuse "$PART1" /mnt/ventoy
 fi
 
-echo "== Downloading $URI"
+# The url is not printed, it may contain a SAS token.
+echo "== Downloading $ISO_NAME"
 curl -fsSL --retry 5 --retry-delay 10 -o "/mnt/ventoy/$ISO_NAME" "$URI"
-EXPECTED_SHA256=$(curl -fsSL "${URI}.sha256" 2>/dev/null | awk '{ print $1 }' || true)
-if [ -n "$EXPECTED_SHA256" ]; then
-    echo "$EXPECTED_SHA256  /mnt/ventoy/$ISO_NAME" | sha256sum -c -
+if [ -z "$ISO_SHA256" ] && [ -n "$ISO_SHA256_URL" ]; then
+    ISO_SHA256=$(curl -fsSL "$ISO_SHA256_URL" 2>/dev/null | awk '{ print $1 }' || true)
+fi
+if [ -n "$ISO_SHA256" ]; then
+    echo "$ISO_SHA256  /mnt/ventoy/$ISO_NAME" | sha256sum -c -
 else
-    echo "No ${URI}.sha256 published, checksum not verified."
+    echo "No sha256 available, checksum not verified."
 fi
 
 echo "== Boot configuration for the Azure serial console"
@@ -543,7 +650,8 @@ $Scriptrun=
 
 $PSDefaultParameterValues = @{ 'out-file:encoding' = 'ascii' }
 $IsVhdUploaded=$env:public + [IO.Path]::DirectorySeparatorChar + "VhdUploaded.txt"
-$tmpfilename=split-path -path $Uri -Leaf
+# $Uri may be a SAS url of a temporary blob, hence the file name is passed separately
+$tmpfilename=$FileName
 # e.g. photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz contains photon-azure-5.0-dde71ec57.x86_64.vhd
 $tmpname=($tmpfilename -split [regex]::Escape(".vhd"))[0] + ".vhd"
 $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname
@@ -606,7 +714,7 @@ if (Test-Path -d $tmppath)
 
             if (!(Test-Path $vhdfile))
             {
-                c:\windows\system32\curl.exe -J -O -L $Uri
+                c:\windows\system32\curl.exe -L -o $tmpfilename $Uri
             }
             if ((Test-Path $downloadfile) -and ((([IO.Path]::GetExtension($tmpfilename)) -ieq ".gz")))
             {
@@ -679,6 +787,20 @@ if ($IsIso)
     $ImageCreated = $false
     try
     {
+        if ($IsLocalFile)
+        {
+            write-output "Computing SHA256 of $($LocalFile.FullName) ..."
+            $IsoSha256 = (Get-FileHash -LiteralPath $LocalFile.FullName -Algorithm SHA256).Hash.ToLower()
+            $IsoSha256Url = ''
+            write-output "Uploading $DownloadFileName ($([math]::Round($LocalFile.Length / 1GB, 2)) GB) to the temporary blob container $SourceContainerName of storage account $StorageAccountName ..."
+            $Uri = Publish-LocalFile
+        }
+        else
+        {
+            $IsoSha256 = ''
+            $IsoSha256Url = "$Uri.sha256"
+        }
+
         # The empty data disk becomes the bootable Ventoy disk and later the image source.
         write-output "Creating data disk $HelperVMDataDiskName ..."
         $diskConfig = New-AzDiskConfig -Location $LocationName -CreateOption Empty -DiskSizeGB $HelperVMDiskSizeGB -SkuName StandardSSD_LRS -OsType Linux -HyperVGeneration $HyperVGeneration -Architecture $Architecture
@@ -700,6 +822,8 @@ if ($IsIso)
         $bash = $VentoyBashScript.Replace("`r`n", "`n").
             Replace('__URI__', $Uri).
             Replace('__ISO_NAME__', $DownloadFileName).
+            Replace('__ISO_SHA256_URL__', $IsoSha256Url).
+            Replace('__ISO_SHA256__', $IsoSha256).
             Replace('__ARCHITECTURE__', $Architecture).
             Replace('__HYPERV_GENERATION__', $HyperVGeneration).
             Replace('__VENTOY_VERSION__', $VentoyVersion).
@@ -758,7 +882,7 @@ if ($IsIso)
         {
             # Specialized: the Photon OS installer has no Azure provisioning agent, hence a VM from this image must not have an OS profile.
             $definition = New-AzGalleryImageDefinition -ResourceGroupName $ResourceGroupName -GalleryName $GalleryName -Name $ImageName -Location $LocationName `
-                -Publisher "PhotonOS" -Offer ("photon-" + ($ImageVersion -replace '\.0$', '')) -Sku $ImageName `
+                -Publisher "PhotonOS" -Offer ("photon-" + ($ImageVersion -replace '\.0$', '')) -Sku (Get-AzSafeName -Name $ImageName -MaxLength 64) `
                 -OsState Specialized -OsType Linux -HyperVGeneration $HyperVGeneration -Architecture $Architecture `
                 -Description "VMware Photon OS installer $DownloadFileName on a Ventoy disk"
         }
@@ -777,6 +901,7 @@ if ($IsIso)
             write-output "Removing helper resources ..."
             Remove-HelperVMResources
         }
+        Remove-TemporarySourceBlob
         if (-not $ImageCreated) { write-output "Error: Image creation failed." }
     }
 }
@@ -790,8 +915,8 @@ else
     }
 
     $capacity = Test-HelperVMCapacity -Location $LocationName -VMSize $HelperVMSize
-    if ($capacity.Architecture -eq 'Arm64') { throw "Vhd urls are processed on a Windows helper VM. Specify an x64 -HelperVMSize." }
-    if ($capacity.TempDiskMB -lt 20480) { throw "Vhd urls are extracted on the temporary disk of the helper VM. $HelperVMSize has no or a too small temporary disk, e.g. use Standard_E2s_v3." }
+    if ($capacity.Architecture -eq 'Arm64') { throw "Vhd files are processed on a Windows helper VM. Specify an x64 -HelperVMSize." }
+    if ($capacity.TempDiskMB -lt 20480) { throw "Vhd files are extracted on the temporary disk of the helper VM. $HelperVMSize has no or a too small temporary disk, e.g. use Standard_E2s_v3." }
     if (-not (Get-AzResourceOrNull { Get-AzResourceGroup -Name $ResourceGroupName })) { $null = New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName }
     $HelperVMPublisherName = "MicrosoftWindowsServer"
     $HelperVMofferName = "WindowsServer"
@@ -817,6 +942,12 @@ else
             $null = New-AzStorageContainer -Name $HelperVMContainerName -Context $storageaccount.Context -Permission Off
         }
 
+        if ($IsLocalFile)
+        {
+            write-output "Uploading $DownloadFileName ($([math]::Round($LocalFile.Length / 1GB, 2)) GB) to the temporary blob container $SourceContainerName of storage account $StorageAccountName ..."
+            $Uri = Publish-LocalFile
+        }
+
         write-output "Creating helper VM $HelperVMName ($HelperVMSize, Windows Server 2022) ..."
         $nic = New-HelperVMNetwork
         $LocalAdminUserCredential = New-Object System.Management.Automation.PSCredential ($HelperVMLocalAdminUser, (ConvertTo-SecureString $HelperVMLocalAdminPwd -AsPlainText -Force))
@@ -839,6 +970,7 @@ else
         out-file -inputobject $content -FilePath $ScriptFile -Encoding ASCII -Append
         out-file -inputobject "'@" -FilePath $ScriptFile -Encoding ASCII -Append
         $tmp='$Uri="'+$Uri+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$FileName="'+$DownloadFileName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
         $tmp='$tmppath="'+$HelperVMsize_TempPath+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
         $tmp='$ResourceGroupName="'+$ResourceGroupName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
         $tmp='$StorageAccountName="'+$StorageAccountName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
@@ -892,6 +1024,7 @@ else
     finally
     {
         foreach ($file in @($contextfile, $ScriptFile)) { if (test-path $file) { remove-item -path $file -force -ErrorAction SilentlyContinue } }
+        Remove-TemporarySourceBlob
         if ($SkipCleanup) { write-output "SkipCleanup: the helper VM $HelperVMName, its resources and storage account $StorageAccountName are kept." }
         else
         {
