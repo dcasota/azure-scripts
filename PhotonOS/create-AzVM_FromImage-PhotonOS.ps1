@@ -1,19 +1,27 @@
-﻿# .SYNOPSIS
+# .SYNOPSIS
 #  Provision an Azure virtual machine from a user Azure VMware Photon OS image.
 #
 # .DESCRIPTION
-#  The script provisions an Azure virtual machine by the location, the Azure VMware Photon OS image name and resource group, the vm resource group, the vm name and the vm local admin credentials as mandatory parameters.
-#  If there is no previously created Azure VMware Photon OS image name, do use the Azure Virtual Machine Image builder script create-AzImage-PhotonOS.ps1 to create an image.
-#  The image name looks like photon-azure-4.0-c001795b8_V2.vhd. The image already contains the information if it is a HyperVGeneration V1 or V2 image.
+#  The script provisions an Azure virtual machine by the Azure VMware Photon OS image name and resource group, the vm resource group and the vm name as mandatory parameters.
+#  If there is no previously created Azure VMware Photon OS image, do use the Azure Virtual Machine Image builder script create-AzImage-PhotonOS.ps1 to create an image.
 #
-#  The script installs the Az 8.0 module if necessary and triggers an Azure login using the device code method. You get a similar message to
+#  Two kinds of images are supported:
+#    - Managed image of a Photon OS Azure vhd, e.g. photon-azure-5.0-dde71ec57.x86_64_V2.vhd. The image already contains the information if it is a HyperVGeneration V1 or V2 image.
+#      The vm local admin credential is applied by the Azure provisioning.
+#    - Azure Compute Gallery image of a Photon OS iso, e.g. -GalleryName PhotonOS_westeurope -ImageName photon-5.0-dde71ec57.aarch64_iso_V2.
+#      The image is specialized and boots the Photon OS installer. Connect with the Azure serial console. An empty data disk is added as installation target.
+#      Architecture (x64/Arm64) and HyperVGeneration are read from the image definition.
+#
+#  The script checks the Az module and triggers an Azure login using the device code method. You get a similar message to
 #    WARNUNG: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
 #  The Azure Powershell output shows up as warning (see above). Open a webbrowser, and fill in the code given by the Azure Powershell login output.
 #
-#  After the login on Azure, it uses the specified location and resource group of the Azure image and provisions the virtual machine. Default Azure vm size is Standard_B1ms.
+#  After the login on Azure, it uses the specified location and resource group of the Azure image and provisions the virtual machine.
+#  Default Azure vm size is Standard_B1ms for x64 and Standard_D2pls_v5 for Arm64 images. Boot diagnostics use a managed storage account.
 #
 #  .PREREQUISITES
 #    - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
+#    - Az.Compute 9.0 or higher
 #    - Azure account with Virtual Machine contributor role
 #
 # .NOTES
@@ -28,30 +36,34 @@
 # 0.71  12.07.2022   dcasota  Bugfixing
 # 0.72  21.07.2022   dcasota  Bugfixing
 # 0.73  28.01.2023   dcasota  Bugfixing
+# 0.80  14.09.2026   dcasota  Azure Compute Gallery images (Arm64, specialized Photon OS installer images) added, vm size and quota preflight check,
+#                             LocationName defaults to the image location, managed boot diagnostics, standard public ip
 #
 # .PARAMETER
 # Parameter LocationName
-#    Azure location name where to create or lookup the resource group
+#    Azure location name where to create or lookup the resource group. Default is the location of the image.
 # Parameter ResourceGroupNameImage
-#    Azure resource group name of the Azure image
-# Parameter Imagename
-#    Azure image name for the uploaded VMware Photon OS
-# Parameter ResourceGroupNameImage
-#    Azure resource group name of the Azure Image
+#    Azure resource group name of the Azure image or gallery
+# Parameter GalleryName
+#    Azure Compute Gallery name. If specified, ImageName is the gallery image definition name.
+# Parameter ImageVersion
+#    Gallery image version. Default is the latest version.
 # Parameter RuntimeId
 #    Generates a random id used in names
 # Parameter ImageName
-#    Azure Image name
+#    Azure image name, or gallery image definition name
 # Parameter ResourceGroupName
 #    Azure resource group name of the VM
 # Parameter VMName
 #    Name of the virtual machine to be created
 # Parameter StorageAccountName
-#    Azure storage account name
+#    not used anymore, boot diagnostics use a managed storage account
 # Parameter ContainerName
-#    Azure storage container name
+#    not used anymore
 # Parameter VMSize
 #    Azure virtual machine size offering
+# Parameter InstallDiskSizeGB
+#    Size of the empty data disk added for specialized installer images
 # Parameter nsgName
 #    network security group name
 # Parameter NetworkName
@@ -67,18 +79,25 @@
 # Parameter PublicIPDNSName
 #    virtual machine public IP DNS name
 # Parameter VMLocalAdminCredential
-#    virtual machine local admin credential
+#    virtual machine local admin credential. Not used for specialized gallery images.
 #
 # .EXAMPLE
 #    ./create-AzVM_FromImage-PhotonOS.ps1 -Location switzerlandnorth -ResourceGroupNameImage PhotonOSTemplates -ImageName photon-azure-4.0-c001795b8_V2.vhd -ResourceGroupName ph4rev2 -VMName ph01 -VMLocalAdminCredential $(Get-credential -message 'Specify a Photon OS local admin username and password. Password must be 12-23 chars long.')
+#    ./create-AzVM_FromImage-PhotonOS.ps1 -ResourceGroupNameImage PhotonOSTemplates -GalleryName PhotonOS_westeurope -ImageName photon-5.0-dde71ec57.aarch64_iso_V2 -ResourceGroupName ph5arm -VMName ph5arm01
 
 [CmdletBinding()]
 param(
-[Parameter(Mandatory = $true)][ValidateNotNull()]
+[Parameter(Mandatory = $false)]
 [string]$LocationName,
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [string]$ResourceGroupNameImage,
+
+[Parameter(Mandatory = $false)]
+[string]$GalleryName,
+
+[Parameter(Mandatory = $false)]
+[string]$ImageVersion,
 
 [Parameter(Mandatory = $false)]
 [string]$RuntimeId = (Get-Random).ToString(),
@@ -98,8 +117,11 @@ param(
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$ContainerName = "${RuntimeId}disks",
 
-[Parameter(Mandatory = $false)][ValidateNotNull()]
-$VMSize = "Standard_B1ms",
+[Parameter(Mandatory = $false)]
+[string]$VMSize,
+
+[Parameter(Mandatory = $false)][ValidateRange(8,1024)]
+[int]$InstallDiskSizeGB = 16,
 
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$nsgName = "${RuntimeId}nsg",
@@ -122,35 +144,54 @@ $VMSize = "Standard_B1ms",
 [Parameter(Mandatory = $false)][ValidateNotNull()]
 [string]$PublicIPDNSName="${RuntimeId}dns",
 
-[Parameter(Mandatory = $true)][ValidateNotNull()]
+[Parameter(Mandatory = $false)]
 [System.Management.Automation.PSCredential]
-[System.Management.Automation.Credential()]$VMLocalAdminCredential = $(Get-credential -Message 'Specify a Photon OS local admin username and password. Username must be all in small letters. Password must be 12-23 chars long.')
+[System.Management.Automation.Credential()]$VMLocalAdminCredential = [System.Management.Automation.PSCredential]::Empty
 
 )
+
+$ErrorActionPreference = 'Stop'
+
+function Get-AzResourceOrNull([scriptblock]$Query)
+{
+    try { & $Query } catch { $null }
+}
+
+function Test-VMCapacity
+{
+    param([string]$Location, [string]$Size)
+
+    $sku = Get-AzComputeResourceSku -Location $Location | Where-Object { ($_.ResourceType -eq 'virtualMachines') -and ($_.Name -ieq $Size) }
+    if (-not $sku) { throw "VM size $Size is not offered in location $Location. Specify another -VMSize." }
+    if ($sku.Restrictions | Where-Object { ($_.ReasonCode -eq 'NotAvailableForSubscription') -and ($_.Type -eq 'Location') })
+    {
+        throw "VM size $Size is restricted for this subscription in location $Location."
+    }
+    $vCPUs = [int](($sku.Capabilities | Where-Object Name -eq 'vCPUs').Value)
+    $usage = Get-AzVMUsage -Location $Location
+    foreach ($quota in @(($usage | Where-Object { $_.Name.Value -ieq $sku.Family }), ($usage | Where-Object { $_.Name.Value -ieq 'cores' })))
+    {
+        if ($quota -and (($quota.Limit - $quota.CurrentValue) -lt $vCPUs))
+        {
+            throw "Not enough vCPU quota for $Size in ${Location}: $($quota.Name.LocalizedValue) $($quota.CurrentValue)/$($quota.Limit), $vCPUs needed."
+        }
+    }
+    $cpuArchitecture = ($sku.Capabilities | Where-Object Name -eq 'CpuArchitectureType').Value
+    if ([string]::IsNullOrEmpty($cpuArchitecture)) { $cpuArchitecture = 'x64' }
+    return $cpuArchitecture
+}
 
 # Specify Tls
 $TLSProtocols = [System.Net.SecurityProtocolType]::'Tls13',[System.Net.SecurityProtocolType]::'Tls12'
 [System.Net.ServicePointManager]::SecurityProtocol = $TLSProtocols
 
 # Check Azure Powershell
-try
+$AzComputeModule = Get-Module -Name Az.Compute -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
+if ((-not $AzComputeModule) -or ($AzComputeModule.Version -lt [version]'9.0.0'))
 {
-	# $version = (get-installedmodule -name Az).version # really slow
-    $version = (get-command get-azcontext).Version.ToString()
-	if ($version -lt "2.8")
-	{
-		write-output "Updating Azure Powershell ..."	
-		update-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
-		write-output "Please restart Powershell session."
-		break			
-	}
-}
-catch
-{
-    write-output "Installing Azure Powershell ..."
-    install-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
-    write-output "Please restart Powershell session."
-    break	
+    write-output "Az.Compute 9.0 or higher is required (Azure Compute Gallery and Arm64 support)."
+    write-output "Install it with: Install-Module -Name Az -Force -AllowClobber, and restart the Powershell session."
+    return
 }
 
 $azconnect=$null
@@ -160,7 +201,7 @@ try
     $subscriptionId=(get-azcontext).Subscription.Id
     $TenantId=(get-azcontext).Tenant.Id
     # set subscription
-    select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+    $null = select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
     $azconnect=get-azcontext -ErrorAction SilentlyContinue
 }
 catch {}
@@ -172,62 +213,89 @@ if ([Object]::ReferenceEquals($azconnect,$null))
         $subscriptionId=(get-azcontext).Subscription.Id
         $TenantId=(get-azcontext).Tenant.Id
         # set subscription
-        select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+        $null = select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
     }
     catch
     {
         write-output "Azure Powershell login required."
-        break
+        return
     }
 }
 
 # Verify virtual machine doesn't exist
-[Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
-if ($VM)
+if (Get-AzResourceOrNull { Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName })
 {
-	write-host "VM $VMName already exists."
-	break
+	write-output "VM $VMName already exists."
+	return
 }
 
 # Verify if image exists
-$result=get-azimage -ResourceGroupName $ResourceGroupNameImage -Name $Imagename -ErrorAction SilentlyContinue
-if ( -not $($result))
+if ([string]::IsNullOrEmpty($GalleryName))
 {
-	write-host "Could not find Azure image $Imagename on resourcegroup $ResourceGroupNameImage."
-	break
+    $image = Get-AzResourceOrNull { Get-AzImage -ResourceGroupName $ResourceGroupNameImage -ImageName $ImageName }
+    if (-not $image)
+    {
+        write-output "Could not find Azure image $ImageName on resourcegroup $ResourceGroupNameImage."
+        return
+    }
+    $ImageId = $image.Id
+    $ImageLocation = $image.Location
+    $ImageArchitecture = 'x64'
+    $IsSpecialized = $false
+}
+else
+{
+    $definition = Get-AzResourceOrNull { Get-AzGalleryImageDefinition -ResourceGroupName $ResourceGroupNameImage -GalleryName $GalleryName -Name $ImageName }
+    if (-not $definition)
+    {
+        write-output "Could not find image definition $ImageName in gallery $GalleryName on resourcegroup $ResourceGroupNameImage."
+        return
+    }
+    if ([string]::IsNullOrEmpty($ImageVersion))
+    {
+        # the image definition id deploys the latest image version
+        $ImageId = $definition.Id
+    }
+    else
+    {
+        $version = Get-AzResourceOrNull { Get-AzGalleryImageVersion -ResourceGroupName $ResourceGroupNameImage -GalleryName $GalleryName -GalleryImageDefinitionName $ImageName -Name $ImageVersion }
+        if (-not $version)
+        {
+            write-output "Could not find version $ImageVersion of image definition $ImageName in gallery $GalleryName."
+            return
+        }
+        $ImageId = $version.Id
+    }
+    $ImageLocation = $definition.Location
+    if ([string]::IsNullOrEmpty($definition.Architecture)) { $ImageArchitecture = 'x64' } else { $ImageArchitecture = $definition.Architecture }
+    $IsSpecialized = ($definition.OsState -ieq 'Specialized')
+}
+
+if ([string]::IsNullOrEmpty($LocationName)) { $LocationName = $ImageLocation }
+if ([string]::IsNullOrEmpty($VMSize))
+{
+    if ($ImageArchitecture -eq 'Arm64') { $VMSize = 'Standard_D2pls_v5' } else { $VMSize = 'Standard_B1ms' }
+}
+
+$VMSizeArchitecture = Test-VMCapacity -Location $LocationName -Size $VMSize
+if ($VMSizeArchitecture -ne $ImageArchitecture)
+{
+    throw "VM size $VMSize is $VMSizeArchitecture, but image $ImageName is $ImageArchitecture."
+}
+
+if ((-not $IsSpecialized) -and ($VMLocalAdminCredential -eq [System.Management.Automation.PSCredential]::Empty))
+{
+    $VMLocalAdminCredential = Get-credential -Message 'Specify a Photon OS local admin username and password. Username must be all in small letters. Password must be 12-23 chars long.'
 }
 
 # create resource group if it does not exist
-$result = get-azresourcegroup -name $ResourceGroupName -Location $LocationName -ErrorAction SilentlyContinue
-if ( -not $($result))
+if (-not (Get-AzResourceOrNull { Get-AzResourceGroup -Name $ResourceGroupName }))
 {
-    New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName
-}
-
-# storageaccount
-$storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
-if ( -not $($storageaccount))
-{
-	$storageaccount=New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind Storage -SkuName Standard_LRS -ErrorAction SilentlyContinue
-	if ( -not $($storageaccount))
-    {
-        write-host "Storage account has not been created. Check if the name is already taken."
-        break
-    }
-}
-do {sleep -Milliseconds 1000} until ($((get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName).ProvisioningState) -ieq "Succeeded") 
-$storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
-$storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
-
-
-$result=get-azstoragecontainer -Name ${ContainerName} -Context $storageaccount.Context -ErrorAction SilentlyContinue 
-if ( -not $($result))
-{
-    new-azstoragecontainer -Name ${ContainerName} -Context $storageaccount.Context -ErrorAction SilentlyContinue -Permission Blob
+    $null = New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName
 }
 
 # network security rules configuration
-$nsg=get-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+$nsg = Get-AzResourceOrNull { Get-AzNetworkSecurityGroup -Name $nsgName -ResourceGroupName $ResourceGroupName }
 if ( -not $($nsg))
 {
 	$nsgRule1 = New-AzNetworkSecurityRuleConfig -Name nsgRule1 -Description "Allow SSH" `
@@ -238,19 +306,18 @@ if ( -not $($nsg))
 }
 
 # set network if not already set
-$vnet = get-azvirtualnetwork -name $networkname -ResourceGroupName $resourcegroupname -ErrorAction SilentlyContinue
+$vnet = Get-AzResourceOrNull { Get-AzVirtualNetwork -Name $NetworkName -ResourceGroupName $ResourceGroupName }
 if ( -not $($vnet))
 {
     $ServerSubnet  = New-AzVirtualNetworkSubnetConfig -Name frontendSubnet  -AddressPrefix $SubnetAddressPrefix -NetworkSecurityGroup $nsg
 	$vnet = New-AzVirtualNetwork -Name $NetworkName -ResourceGroupName $ResourceGroupName -Location $LocationName -AddressPrefix $VnetAddressPrefix -Subnet $ServerSubnet
-	$vnet | Set-AzVirtualNetwork
 }
 
 # Create a public IP address
-$nic=get-AzNetworkInterface -Name $NICName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
+$nic = Get-AzResourceOrNull { Get-AzNetworkInterface -Name $NICName -ResourceGroupName $ResourceGroupName }
 if ( -not $($nic))
 {
-	$pip = New-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Location $LocationName -Name $PublicIPDNSName -AllocationMethod Static -IdleTimeoutInMinutes 4
+	$pip = New-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Location $LocationName -Name $PublicIPDNSName -AllocationMethod Static -Sku Standard -IdleTimeoutInMinutes 4
 	# Create a virtual network interface and associate it with public IP address and NSG
 	$nic = New-AzNetworkInterface -Name $NICName -ResourceGroupName $ResourceGroupName -Location $LocationName `
 		-SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
@@ -258,18 +325,30 @@ if ( -not $($nic))
 
 # create virtual machine
 $VM = New-AzVMConfig -VMName $VMName -VMSize $VMSize
-$VM = Set-AzVMOperatingSystem -VM $VM -Linux -ComputerName $ComputerName -Credential $VMLocalAdminCredential
+if ($IsSpecialized)
+{
+    # no OS profile: the Photon OS installer image has no Azure provisioning agent.
+    # Without OS profile New-AzVM assumes Windows and adds the BGInfo extension, which waits for a VM agent forever.
+    $VM = Set-AzVMOSDisk -VM $VM -CreateOption FromImage -Linux
+    $VM = Add-AzVMDataDisk -VM $VM -Name "${VMName}_installdisk" -Lun 0 -CreateOption Empty -DiskSizeInGB $InstallDiskSizeGB
+}
+else
+{
+    $VM = Set-AzVMOperatingSystem -VM $VM -Linux -ComputerName $ComputerName -Credential $VMLocalAdminCredential
+}
 $VM = Add-AzVMNetworkInterface -VM $VM -Id $nic.Id
-$VM = $VM | set-AzVMSourceImage -Id (get-azimage -ResourceGroupName $ResourceGroupNameImage -ImageName $ImageName).Id
-$VM| Set-AzVMBootDiagnostic -Disable
-$VM| Set-AzVMBootDiagnostic -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName
-sleep -Milliseconds 5000
+$VM = Set-AzVMSourceImage -VM $VM -Id $ImageId
+$VM = Set-AzVMBootDiagnostic -VM $VM -Enable
 
-New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $VM
+New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $VM -DisableBginfoExtension
 
-[Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName -ErrorAction SilentlyContinue
+$VM = Get-AzResourceOrNull { Get-AzVM -ResourceGroupName $ResourceGroupName -Name $VMName }
 if (!($VM))
 {
 	write-Output "Error: Virtual machine hasn't been created."
-	break
-}    
+	return
+}
+if ($IsSpecialized)
+{
+    write-output "VM $VMName boots the Photon OS installer. Open the Azure serial console of the VM to proceed with the installation onto disk ${VMName}_installdisk."
+}

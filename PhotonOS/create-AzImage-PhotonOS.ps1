@@ -1,26 +1,36 @@
-﻿# .SYNOPSIS
+# .SYNOPSIS
 #  Deploy an Azure image of VMware Photon OS
 #
 # .DESCRIPTION
 #  VMware Photon OS comes with multi-cloud support, use-case centric flavors, x86_64 and arm64 support and it supports virtual hardware generations.
 #  On Azure actually, there are no official VMware Photon OS images. This may change. For the moment, this helper script deploys an Azure image of Photon OS.
 #
-#  It creates an Azure image of VMware Photon OS by iso or vhd download url. Url, location and the resource group name as mandatory parameters.
-#  Without specifying further parameters, an Azure image Hyper-V generation V2 is created.
-#  The name of the Azure image is adopted from the download url and the HyperVGeneration ending _V1.vhd or _V2.vhd. It looks like "photon-azure-4.0-c001795b8_V2.vhd" or "photon-azure-4.0-c001795b8_iso_V2.vhd".
+#  It creates an Azure image of VMware Photon OS by iso or vhd download url. The resource group name is a mandatory parameter.
+#  Without specifying further parameters, an Azure Arm64 image of the Photon OS 5.0 GA aarch64 iso is created in westeurope.
 #
-#  First, the script installs the Az 8.0 module, if necessary, and triggers an Azure login using the device code method. You might see a similar message to
+#  First, the script checks the Az module and triggers an Azure login using the device code method. You might see a similar message to
 #    WARNUNG: To sign in, use a web browser to open the page https://microsoft.com/devicelogin and enter the code xxxxxxxxx to authenticate.
 #  The Azure Powershell output shows up as warning (see above). Open a webbrowser, and fill in the code given by the Azure Powershell login output.
 #
-#  A temporary Azure windows virtual machine is created with Microsoft Windows Server 2022 on a specifiable Hyper-V generation virtual hardware V1/V2 using an appropriate Azure offering.
-#  See Azure virtual hardware generation related weblink https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
-#  In case of an iso, the added disk is Ventoy-configured, stores the Photon OS iso file and converted to vhd using disk2vhd.
-#  After uploading the Photon OS vhd file as Azure page blob, the Azure Photon OS image is created. The cleanup deletes the temporary virtual machine.
+#  Iso url (x86_64 and aarch64):
+#    A temporary Ubuntu 22.04 virtual machine (Arm64 or x64, depending on the helper VM size) is created with an empty managed data disk attached.
+#    Inside the virtual machine, the data disk is configured as Ventoy bootable disk, the Photon OS iso file is downloaded onto it, and the boot configuration
+#    is patched for the Azure serial console. The data disk is detached and published as Azure Compute Gallery image version (OsState Specialized).
+#    A VM created from that image boots the Photon OS installer. Managed images do not support Arm64, hence the Azure Compute Gallery.
+#    The gallery is named PhotonOS_<location>, the image definition looks like "photon-5.0-dde71ec57.aarch64_iso_V2".
+#
+#  Vhd url (x86_64 only):
+#    A temporary Windows Server 2022 virtual machine downloads and extracts the Photon OS vhd, uploads it as page blob, and a managed image is created.
+#    The name of the Azure image looks like "photon-azure-5.0-dde71ec57.x86_64_V2.vhd".
+#    See Azure virtual hardware generation related weblink https://docs.microsoft.com/en-us/azure/virtual-machines/windows/generation-2
+#
+#  The helper virtual machine size and the vCPU quota are checked before any resource is created. The cleanup deletes the temporary resources.
 #
 #  .PREREQUISITES
 #    - Script must run on MS Windows OS with Powershell PSVersion 5.1 or higher
+#    - Az.Compute 9.0 or higher
 #    - Azure account with Virtual Machine contributor role
+#    - vCPU quota for the helper VM size. Standard_D2pls_v5 (Arm64 default) requires the DPLSv5 family quota in the target location.
 #
 #
 # .NOTES
@@ -47,9 +57,18 @@
 #   2.00  26.01.2023   dcasota  iso url support added (does not work yet, NO AARCH64 SUPPORT YET)
 #   2.01  19.03.2023   dcasota  bugfix iso url support (TODO : aarch64 support, Linux HelperDiskname, replace hardcoded CustomScriptExtension version)
 #   2.02  31.03.2023   dcasota  Photon 5.0 rc urls added
+#   2.03  13.05.2023   dcasota  Photon 5.0 GA vhd url added, bugfix .x86_64.vhd extraction, Ventoy 1.0.91
+#   2.10  14.09.2026   dcasota  aarch64 iso support. Iso urls are processed on a Linux helper VM and published to an Azure Compute Gallery.
+#                               Default Photon OS 5.0 GA aarch64 iso, helper VM size Standard_D2pls_v5, location westeurope (aarch64) or switzerlandnorth.
+#                               Bugfix serial console (Ventoy conf_replace of /boot/grub2/grub.cfg), private blob container, generated helper VM password,
+#                               vm size and quota preflight check, rerun detection, cleanup on failure.
 #
 # .PARAMETER DownloadURL
 #   Specifies the URL of the VMware Photon OS .iso file
+#        Photon OS 5.0 GA Full ISO arm64                     https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso
+#        Photon OS 5.0 GA Minimal ISO arm64                  https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.aarch64.iso
+#        Photon OS 5.0 GA Full ISO x86_64                    https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.x86_64.iso
+#        Photon OS 5.0 GA Minimal ISO x86_64                 https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.x86_64.iso
 #        Photon OS 5.0 RC Full ISO x86_64                    https://packages.vmware.com/photon/5.0/RC/iso/photon-5.0-4d5974638.x86_64.iso
 #        Photon OS 5.0 RC Minimal ISO x86_64                 https://packages.vmware.com/photon/5.0/RC/iso/photon-minimal-5.0-4d5974638.x86_64.iso
 #        Photon OS 5.0 RC Real-Time ISO x86_64               https://packages.vmware.com/photon/5.0/RC/iso/photon-rt-5.0-4d5974638.x86_64.iso
@@ -70,6 +89,7 @@
 
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
 #      VMware Photon OS build download links:
+#        Photon OS 5.0 GA Azure VHD                          https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz
 #        Photon OS 5.0 RC Azure VHD                          https://packages.vmware.com/photon/5.0/RC/azure/photon-azure-5.0-4d5974638.x86_64.vhd.tar.gz
 #        Photon OS 5.0 Beta Azure VHD                        https://packages.vmware.com/photon/5.0/Beta/azure/photon-azure-5.0-9e778f409.vhd.tar.gz
 #        Photon OS 4.0 Rev2 Azure VHD                        https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz
@@ -81,34 +101,51 @@
 #        Photon OS 3.0 GA Azure VHD                          https://packages.vmware.com/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz
 #        Photon OS 3.0 RC Azure VHD                          https://packages.vmware.com/photon/3.0/RC/azure/photon-azure-3.0-49fd219.vhd.tar.gz
 #        Photon OS 3.0 Beta Azure VHD                        https://packages.vmware.com/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz
-#        Photon OS 2.0 GA Azure VHD gz file:                 https://packatares.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz
+#        Photon OS 2.0 GA Azure VHD gz file:                 https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz
 #        Photon OS 2.0 GA Azure VHD cloud-init provisioning  https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
 #        Photon OS 2.0 RC Azure VHD - gz file                https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz
 #        Photon OS 2.0 Beta Azure VHD                        https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd
 # .PARAMETER LocationName
-#   Azure location name where to create or lookup the resource group
+#   Azure location name where to create or lookup the resources. Default is westeurope for aarch64 urls, otherwise switzerlandnorth.
 # .PARAMETER ResourceGroupName
 #   resource group name
 # .PARAMETER RuntimeId
 #   random id used in names
 # .PARAMETER StorageAccountName
-#   storage account name
+#   storage account name (vhd url only)
 # .PARAMETER StorageKind
-#   storage kind
+#   storage kind (vhd url only)
 # .PARAMETER StorageAccountType
-#   storage account type
+#   storage account type (vhd url only)
 # .PARAMETER HyperVGeneration
-#   Azure HyperVGeneration
+#   Azure HyperVGeneration. Arm64 supports V2 only.
+# .PARAMETER HelperVMSize
+#   Size of the temporary helper VM. Default is Standard_D2pls_v5 for aarch64 iso urls, Standard_D2s_v3 for x86_64 iso urls and Standard_E2s_v3 for vhd urls.
+# .PARAMETER HelperVMDiskSizeGB
+#   Size of the Ventoy data disk (iso url only)
+# .PARAMETER GalleryName
+#   Azure Compute Gallery name (iso url only). Default is PhotonOS_<LocationName>.
+# .PARAMETER VentoyVersion
+#   Ventoy release used to make the data disk bootable (iso url only)
+# .PARAMETER SkipCleanup
+#   Keep the helper VM and its resources, e.g. for troubleshooting
 #
 # .EXAMPLE
-#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/4.0/Rev2/iso/photon-4.0-c001795b8.iso" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth -HyperVGeneration V2
+#    ./create-AzImage-PhotonOS.ps1 -ResourceGroupName PhotonOSTemplates
+#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso" -ResourceGroupName PhotonOSTemplates -LocationName westeurope -HelperVMSize Standard_D2pls_v5
+#    ./create-AzImage-PhotonOS.ps1 -DownloadURL "https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth -HyperVGeneration V2
 #
 #>
 
 [CmdletBinding()]
 param(
-[Parameter(Mandatory = $true)][ValidateNotNull()]
+[Parameter(Mandatory = $false)][ValidateNotNull()]
 [ValidateSet(
+'https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso', `
+'https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.aarch64.iso', `
+'https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.x86_64.iso', `
+'https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.x86_64.iso', `
+'https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz', `
 'https://packages.vmware.com/photon/5.0/RC/iso/photon-5.0-4d5974638.x86_64.iso', `
 'https://packages.vmware.com/photon/5.0/RC/azure/photon-azure-5.0-4d5974638.x86_64.vhd.tar.gz', `
 'https://packages.vmware.com/photon/5.0/Beta/iso/photon-5.0-9e778f409.iso', `
@@ -128,9 +165,9 @@ param(
 'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz', `
 'https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz', `
 'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
-[String]$DownloadURL="https://packages.vmware.com/photon/5.0/RC/iso/photon-5.0-4d5974638.x86_64.iso",
+[String]$DownloadURL="https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso",
 
-[Parameter(Mandatory = $true)][ValidateNotNull()]
+[Parameter(Mandatory = $false)]
 [string]$LocationName,
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
@@ -139,73 +176,179 @@ param(
 [Parameter(Mandatory = $false)]
 [string]$RuntimeId = (Get-Random).ToString(),
 
-[Parameter(Mandatory = $false)][ValidateLength(3,24)][ValidatePattern("[a-z0-9]")]
+[Parameter(Mandatory = $false)][ValidateLength(3,24)][ValidatePattern("^[a-z0-9]+$")]
 [string]$StorageAccountName=("PhotonOS${RuntimeId}").ToLower(),
 
 [Parameter(Mandatory = $false)]
-[string]$StorageKind="Storage",
+[string]$StorageKind="StorageV2",
 
 [Parameter(Mandatory = $false)]
 [string]$StorageAccountType="Standard_LRS",
 
 [Parameter(Mandatory = $false)][ValidateSet('V1','V2')]
-[string]$HyperVGeneration="V2"
+[string]$HyperVGeneration="V2",
 
+[Parameter(Mandatory = $false)]
+[string]$HelperVMSize,
+
+[Parameter(Mandatory = $false)][ValidateRange(8,64)]
+[int]$HelperVMDiskSizeGB=16,
+
+[Parameter(Mandatory = $false)]
+[string]$GalleryName,
+
+[Parameter(Mandatory = $false)]
+[string]$VentoyVersion="1.1.17",
+
+[Parameter(Mandatory = $false)]
+[switch]$SkipCleanup
 )
 
+$ErrorActionPreference = 'Stop'
 
-if ($DownloadURL.ToLower().EndsWith('.iso'))
+# Download url processing
+$Uri = [System.Uri]::UnescapeDataString($DownloadURL)
+$DownloadFileName = Split-Path -Path $Uri -Leaf
+$IsIso = $DownloadFileName.ToLower().EndsWith('.iso')
+if ($DownloadFileName -match '[.-]aarch64\.(iso|vhd\.tar\.gz)$') { $Architecture = 'Arm64' } else { $Architecture = 'x64' }
+
+if ($Architecture -eq 'Arm64')
 {
-    # override setting
-    $HyperVGeneration="V1"
-    # Imagename is a .vhd file, generated using Ventoy with included Photon OS iso file
-    [string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL)) -Leaf) -split ".iso")[0] + "_iso_" + $HyperVGeneration + ".vhd")
-    # Uri + Blobname
-    $Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL))
-    $BlobName=((split-path -path $Uri -Leaf) -split ".iso")[0] + ".iso"
+    if (-not $IsIso) { throw "Only Photon OS aarch64 .iso urls are supported. There is no aarch64 Azure vhd." }
+    if ($PSBoundParameters.ContainsKey('HyperVGeneration') -and ($HyperVGeneration -ne 'V2')) { throw "Azure Arm64 virtual machines support HyperVGeneration V2 only." }
+    $HyperVGeneration = 'V2'
+}
+
+if ([string]::IsNullOrEmpty($LocationName))
+{
+    if ($Architecture -eq 'Arm64') { $LocationName = 'westeurope' } else { $LocationName = 'switzerlandnorth' }
+}
+
+if ([string]::IsNullOrEmpty($HelperVMSize))
+{
+    if ($IsIso -and ($Architecture -eq 'Arm64')) { $HelperVMSize = 'Standard_D2pls_v5' }
+    elseif ($IsIso) { $HelperVMSize = 'Standard_D2s_v3' }
+    else { $HelperVMSize = 'Standard_E2s_v3' }
+}
+
+if ([string]::IsNullOrEmpty($GalleryName)) { $GalleryName = "PhotonOS_${LocationName}" }
+
+if ($IsIso)
+{
+    # Azure Compute Gallery image definition, e.g. photon-5.0-dde71ec57.aarch64_iso_V2, image version 5.0.0
+    $ImageName = ($DownloadFileName -replace '\.iso$', '') + "_iso_" + $HyperVGeneration
+    if ($Uri -match '/photon/(\d+)\.(\d+)/') { $ImageVersion = "$($Matches[1]).$($Matches[2]).0" } else { $ImageVersion = '1.0.0' }
 }
 else
 {
-   [string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL)) -Leaf) -split ".vhd")[0] + "_" + $HyperVGeneration + ".vhd")
-    # Uri + Blobname
-    $Uri=$([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL))
-    $BlobName=((split-path -path $Uri -Leaf) -split ".vhd")[0] + ".vhd"
+    # Managed image, e.g. photon-azure-5.0-dde71ec57.x86_64_V2.vhd
+    $ImageName = ($DownloadFileName -split [regex]::Escape('.vhd'))[0] + "_" + $HyperVGeneration + ".vhd"
 }
+
+# SHA256 of the Ventoy linux package, verified inside the helper VM
+$VentoyKnownSha256 = @{ '1.1.17' = '7fb4ed08cef6a6b4d39dd19260d8c80291a78dfdf9af7d461571e23cbbc43805' }
+$VentoySha256 = $VentoyKnownSha256[$VentoyVersion]
 
 
 # HelperVM settings
-$HelperVMComputerName = "w2k22${RuntimeId}"
+if ($IsIso) { $HelperVMComputerName = "ph${RuntimeId}" } else { $HelperVMComputerName = "w2k22${RuntimeId}" }
 $HelperVMName = $HelperVMComputerName
 $HelperVMContainerName = "${HelperVMComputerName}disks"
-$HelperVMDiskName="${HelperVMComputerName}PhotonOSDisk"
-$HelperVMDiskSizeGB='16'
-if (($DownloadURL.ToLower().EndsWith('-aarch64.iso')) -or ($DownloadURL.ToLower().EndsWith('-aarch64.tar.gz')))
-{
-    # Not fully implemented yet !
-    $HelperVMPublisherName = "Canonical"
-    $HelperVMofferName = "0001-com-ubuntu-server-jammy"
-    $HelperVMsku = "22_04-lts-arm64"
-    $HelperVMsize="Standard_D2plds_v5"
-    $HelperVMsize_TempPath="/dev/sdb" # $DownloadURL file is downloaded and extracted on this drive inside vm. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
-}
-else
-{
-    $HelperVMPublisherName = "MicrosoftWindowsServer"
-    $HelperVMofferName = "WindowsServer"
-    $HelperVMsku = "2022-datacenter-core-smalldisk-g2"
-    $HelperVMsize="Standard_E4s_v3"
-    $HelperVMsize_TempPath="d:" # $DownloadURL file is downloaded and extracted on this drive inside vm. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
-}
+$HelperVMDataDiskName = "${ImageName}_${RuntimeId}"
 $HelperVMNetworkName = "${HelperVMComputerName}vnet"
 $HelperVMSubnetAddressPrefix = "192.168.1.0/24"
 $HelperVMVnetAddressPrefix = "192.168.0.0/16"
 $HelperVMnsgName = "${HelperVMComputerName}nsg"
 $HelperVMPublicIPDNSName="${HelperVMComputerName}dns"
 $HelperVMNICName = "${HelperVMComputerName}nic"
-$HelperVMLocalAdminUser = "LocalAdminUser"
-$HelperVMLocalAdminPwd="Secure2020123!" #12-123 chars
+$HelperVMLocalAdminUser = "photonadmin"
+$HelperVMsize_TempPath="d:" # vhd url only: $DownloadURL file is downloaded and extracted on the temporary disk of the Windows helper VM.
 
 
+function New-HelperVMPassword
+{
+    # nobody logs in to the helper VM, the password only satisfies the Azure complexity rules
+    $chars = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    $bytes = New-Object byte[] 24
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return "Ph0!" + (-join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] }))
+}
+$HelperVMLocalAdminPwd = New-HelperVMPassword
+
+
+function Get-AzResourceOrNull([scriptblock]$Query)
+{
+    try { & $Query } catch { $null }
+}
+
+
+function Test-HelperVMCapacity
+{
+    param([string]$Location, [string]$VMSize)
+
+    $sku = Get-AzComputeResourceSku -Location $Location | Where-Object { ($_.ResourceType -eq 'virtualMachines') -and ($_.Name -ieq $VMSize) }
+    if (-not $sku) { throw "VM size $VMSize is not offered in location $Location. Specify another -HelperVMSize or -LocationName." }
+    if ($sku.Restrictions | Where-Object { ($_.ReasonCode -eq 'NotAvailableForSubscription') -and ($_.Type -eq 'Location') })
+    {
+        throw "VM size $VMSize is restricted for this subscription in location $Location."
+    }
+
+    $vCPUs = [int](($sku.Capabilities | Where-Object Name -eq 'vCPUs').Value)
+    $usage = Get-AzVMUsage -Location $Location
+    foreach ($quota in @(($usage | Where-Object { $_.Name.Value -ieq $sku.Family }), ($usage | Where-Object { $_.Name.Value -ieq 'cores' })))
+    {
+        if ($quota -and (($quota.Limit - $quota.CurrentValue) -lt $vCPUs))
+        {
+            throw "Not enough vCPU quota for $VMSize in ${Location}: $($quota.Name.LocalizedValue) $($quota.CurrentValue)/$($quota.Limit), $vCPUs needed. Request a quota increase or specify another -HelperVMSize (e.g. Standard_D2pls_v6 for Arm64)."
+        }
+    }
+
+    $cpuArchitecture = ($sku.Capabilities | Where-Object Name -eq 'CpuArchitectureType').Value
+    if ([string]::IsNullOrEmpty($cpuArchitecture)) { $cpuArchitecture = 'x64' }
+    $tempDiskMB = ($sku.Capabilities | Where-Object Name -eq 'MaxResourceVolumeMB').Value
+    if ([string]::IsNullOrEmpty($tempDiskMB)) { $tempDiskMB = 0 }
+    return [pscustomobject]@{
+        Architecture      = $cpuArchitecture
+        HyperVGenerations = ($sku.Capabilities | Where-Object Name -eq 'HyperVGenerations').Value
+        TempDiskMB        = [int]$tempDiskMB
+    }
+}
+
+
+function New-HelperVMNetwork
+{
+    # No inbound rules. The standard public IP provides outbound internet access for the downloads.
+    $nsg = New-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -Location $LocationName -Force
+    $subnet = New-AzVirtualNetworkSubnetConfig -Name frontendSubnet -AddressPrefix $HelperVMSubnetAddressPrefix -NetworkSecurityGroup $nsg
+    $vnet = New-AzVirtualNetwork -Name $HelperVMNetworkName -ResourceGroupName $ResourceGroupName -Location $LocationName -AddressPrefix $HelperVMVnetAddressPrefix -Subnet $subnet -Force
+    $pip = New-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Location $LocationName -Name $HelperVMPublicIPDNSName -AllocationMethod Static -Sku Standard -IdleTimeoutInMinutes 4 -Force
+    return New-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -Location $LocationName -SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id -Force
+}
+
+
+function Remove-HelperVMResources
+{
+    $steps = [ordered]@{
+        "virtual machine $HelperVMName" = {
+            $vm = Get-AzResourceOrNull { Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName }
+            if ($vm)
+            {
+                $osDiskName = $vm.StorageProfile.OsDisk.Name
+                $null = Remove-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName -Force
+                if (Get-AzResourceOrNull { Get-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $osDiskName }) { $null = Remove-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $osDiskName -Force }
+            }
+        }
+        "network interface $HelperVMNICName" = { if (Get-AzResourceOrNull { Get-AzNetworkInterface -ResourceGroupName $ResourceGroupName -Name $HelperVMNICName }) { $null = Remove-AzNetworkInterface -ResourceGroupName $ResourceGroupName -Name $HelperVMNICName -Force } }
+        "public ip $HelperVMPublicIPDNSName" = { if (Get-AzResourceOrNull { Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $HelperVMPublicIPDNSName }) { $null = Remove-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $HelperVMPublicIPDNSName -Force } }
+        "virtual network $HelperVMNetworkName" = { if (Get-AzResourceOrNull { Get-AzVirtualNetwork -ResourceGroupName $ResourceGroupName -Name $HelperVMNetworkName }) { $null = Remove-AzVirtualNetwork -ResourceGroupName $ResourceGroupName -Name $HelperVMNetworkName -Force } }
+        "network security group $HelperVMnsgName" = { if (Get-AzResourceOrNull { Get-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroupName -Name $HelperVMnsgName }) { $null = Remove-AzNetworkSecurityGroup -ResourceGroupName $ResourceGroupName -Name $HelperVMnsgName -Force } }
+        "disk $HelperVMDataDiskName" = { if (Get-AzResourceOrNull { Get-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDataDiskName }) { $null = Remove-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDataDiskName -Force } }
+    }
+    foreach ($step in $steps.GetEnumerator())
+    {
+        try { & $step.Value } catch { Write-Warning "Cleanup of $($step.Key) failed: $($_.Exception.Message)" }
+    }
+}
 
 
 # Specify Tls
@@ -213,24 +356,12 @@ $TLSProtocols = [System.Net.SecurityProtocolType]::'Tls13',[System.Net.SecurityP
 [System.Net.ServicePointManager]::SecurityProtocol = $TLSProtocols
 
 # Check Azure Powershell
-try
+$AzComputeModule = Get-Module -Name Az.Compute -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
+if ((-not $AzComputeModule) -or ($AzComputeModule.Version -lt [version]'9.0.0'))
 {
-	# $version = (get-installedmodule -name Az).version # really slow
-    $version = (get-command get-azcontext).Version.ToString()
-	if ($version -lt "2.8")
-	{
-		write-output "Updating Azure Powershell ..."	
-		update-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
-		write-output "Please restart Powershell session."
-		break			
-	}
-}
-catch
-{
-    write-output "Installing Azure Powershell ..."
-    install-module -Name Az -RequiredVersion "8.0" -ErrorAction SilentlyContinue
-    write-output "Please restart Powershell session."
-    break	
+    write-output "Az.Compute 9.0 or higher is required (Arm64 disk and Azure Compute Gallery support)."
+    write-output "Install it with: Install-Module -Name Az -Force -AllowClobber, and restart the Powershell session."
+    return
 }
 
 $azconnect=$null
@@ -240,7 +371,7 @@ try
     $subscriptionId=(get-azcontext).Subscription.Id
     $TenantId=(get-azcontext).Tenant.Id
     # set subscription
-    select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+    $null = select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
     $azconnect=get-azcontext -ErrorAction SilentlyContinue
 }
 catch {}
@@ -252,64 +383,171 @@ if ([Object]::ReferenceEquals($azconnect,$null))
         $subscriptionId=(get-azcontext).Subscription.Id
         $TenantId=(get-azcontext).Tenant.Id
         # set subscription
-        select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
+        $null = select-AzSubscription -Subscription $subscriptionId -tenant $TenantId -ErrorAction Stop
     }
     catch
     {
         write-output "Azure Powershell login required."
-        break
+        return
     }
 }
 
-# save credentials
-$contextfile=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
-Save-AzContext -Path $contextfile -Force
+write-output "Photon OS $Architecture $(if ($IsIso) {'iso'} else {'vhd'}): $DownloadFileName"
+write-output "Location $LocationName, resource group $ResourceGroupName, HyperVGeneration $HyperVGeneration, helper VM size $HelperVMSize"
 
 
+$VentoyBashScript=
+@'
+#!/bin/bash
+# Runs as root inside the Linux helper VM (Azure CustomScript extension).
+# Turns the data disk on lun 1 into a Ventoy disk containing the Photon OS iso, configured for the Azure serial console.
+set -euo pipefail
+
+URI='__URI__'
+ISO_NAME='__ISO_NAME__'
+ARCHITECTURE='__ARCHITECTURE__'
+HYPERV_GENERATION='__HYPERV_GENERATION__'
+VENTOY_VERSION='__VENTOY_VERSION__'
+VENTOY_SHA256='__VENTOY_SHA256__'
+DISK_SIZE_GB='__DISK_SIZE_GB__'
+
+echo "== Locating the data disk on lun 1"
+DISK=""
+for link in /dev/disk/azure/scsi1/lun1 /dev/disk/azure/data/by-lun/1; do
+    if [ -e "$link" ]; then DISK=$(readlink -f "$link"); break; fi
+done
+if [ -z "$DISK" ]; then
+    WANT_BYTES=$((DISK_SIZE_GB * 1024 * 1024 * 1024))
+    DISK=$(lsblk -dnbpo NAME,SIZE,TYPE | awk -v want="$WANT_BYTES" '$3 == "disk" && $2 == want { print $1; exit }')
+fi
+if [ -z "$DISK" ] || [ ! -b "$DISK" ]; then echo "Data disk not found."; lsblk; exit 1; fi
+ROOT_DISK=$(lsblk -npo PKNAME "$(findmnt -nvo SOURCE /)")
+if [ "$DISK" = "$ROOT_DISK" ]; then echo "Refusing to use $DISK, it is the OS disk."; exit 1; fi
+if lsblk -no MOUNTPOINT "$DISK" | grep -q '[^[:space:]]'; then echo "Refusing to use $DISK, it has mounted partitions."; exit 1; fi
+echo "Using $DISK"
+
+echo "== Installing prerequisites"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -qq
+apt-get install -y -qq parted dosfstools curl >/dev/null
+
+echo "== Installing Ventoy $VENTOY_VERSION"
+WORK_DIR=/opt/ventoy
+rm -rf "$WORK_DIR"
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR"
+curl -fsSL --retry 5 -o ventoy.tar.gz "https://github.com/ventoy/Ventoy/releases/download/v${VENTOY_VERSION}/ventoy-${VENTOY_VERSION}-linux.tar.gz"
+if [ -n "$VENTOY_SHA256" ]; then echo "$VENTOY_SHA256  ventoy.tar.gz" | sha256sum -c -; fi
+tar -xzf ventoy.tar.gz
+cd "ventoy-${VENTOY_VERSION}"
+PARTITION_STYLE=""
+if [ "$HYPERV_GENERATION" = "V2" ]; then PARTITION_STYLE="-g"; fi
+# Ventoy2Disk asks twice for confirmation and exits 0 when not confirmed, hence the check with -l
+printf 'y\ny\n' | sh ./Ventoy2Disk.sh -I $PARTITION_STYLE "$DISK"
+sh ./Ventoy2Disk.sh -l "$DISK" | tee /tmp/ventoy-list.txt
+grep -q "Ventoy Version in Disk" /tmp/ventoy-list.txt || { echo "Ventoy installation failed."; exit 1; }
+
+udevadm settle
+partprobe "$DISK" || true
+sleep 3
+PART1=$(lsblk -lnpo NAME,TYPE "$DISK" | awk '$2 == "part" { print $1; exit }')
+if [ -z "$PART1" ] || [ ! -b "$PART1" ]; then echo "Ventoy partition not found."; lsblk "$DISK"; exit 1; fi
+
+echo "== Mounting the Ventoy exFAT partition $PART1"
+mkdir -p /mnt/ventoy /mnt/iso
+# The Ubuntu azure kernel ships the exfat module in linux-modules-extra only, exfat-fuse is the fallback.
+if ! grep -qw exfat /proc/filesystems && ! modprobe exfat 2>/dev/null; then
+    apt-get install -y -qq "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 && modprobe exfat 2>/dev/null || true
+fi
+if grep -qw exfat /proc/filesystems; then
+    mount -t exfat "$PART1" /mnt/ventoy
+else
+    echo "exfat kernel module not available, using exfat-fuse"
+    apt-get install -y -qq exfat-fuse >/dev/null
+    mount.exfat-fuse "$PART1" /mnt/ventoy
+fi
+
+echo "== Downloading $URI"
+curl -fsSL --retry 5 --retry-delay 10 -o "/mnt/ventoy/$ISO_NAME" "$URI"
+EXPECTED_SHA256=$(curl -fsSL "${URI}.sha256" 2>/dev/null | awk '{ print $1 }' || true)
+if [ -n "$EXPECTED_SHA256" ]; then
+    echo "$EXPECTED_SHA256  /mnt/ventoy/$ISO_NAME" | sha256sum -c -
+else
+    echo "No ${URI}.sha256 published, checksum not verified."
+fi
+
+echo "== Boot configuration for the Azure serial console"
+mount -o loop,ro "/mnt/ventoy/$ISO_NAME" /mnt/iso
+mkdir -p /mnt/ventoy/ventoy
+cp /mnt/iso/boot/grub2/grub.cfg /mnt/ventoy/ventoy/grub.cfg
+HAS_MENU_CFG=0
+if [ "$ARCHITECTURE" = "x64" ] && [ -f /mnt/iso/isolinux/menu.cfg ]; then
+    cp /mnt/iso/isolinux/menu.cfg /mnt/ventoy/ventoy/menu.cfg
+    HAS_MENU_CFG=1
+fi
+umount /mnt/iso
+
+GRUB_CFG=/mnt/ventoy/ventoy/grub.cfg
+# Exactly one console= parameter: the installer initrd starts photon-installer only on the tty matching
+# /sys/devices/virtual/tty/console/active, which lists all consoles (e.g. "tty1 ttyAMA0" never matches).
+if [ "$ARCHITECTURE" = "Arm64" ]; then
+    # Azure Arm64 VMs expose the serial console as PL011 uart ttyAMA0
+    KERNEL_CONSOLE="console=ttyAMA0,115200 earlycon"
+    sed -i -E 's/^[[:space:]]*terminal_output[[:space:]]+gfxterm[[:space:]]*$/terminal_output console/' "$GRUB_CFG"
+else
+    KERNEL_CONSOLE="console=ttyS0,115200n8 earlyprintk=ttyS0,115200"
+    sed -i -E 's/^[[:space:]]*terminal_output[[:space:]]+gfxterm[[:space:]]*$/serial --unit=0 --speed=115200\nterminal_input serial console\nterminal_output serial console/' "$GRUB_CFG"
+fi
+sed -i -E "s/^([[:space:]]*linux[[:space:]].*)\$/\1 ${KERNEL_CONSOLE}/" "$GRUB_CFG"
+grep -qF "$KERNEL_CONSOLE" "$GRUB_CFG" || { echo "No linux line found in grub.cfg."; cat "$GRUB_CFG"; exit 1; }
+if [ "$HAS_MENU_CFG" = "1" ]; then
+    sed -i -E "s/^([[:space:]]*append[[:space:]].*)\$/\1 console=ttyS0,115200n8/" /mnt/ventoy/ventoy/menu.cfg
+fi
+
+if [ "$ARCHITECTURE" = "Arm64" ]; then
+    THEME='"display_mode": "CLI"'
+else
+    THEME='"display_mode": "serial_console", "serial_param": "--unit=0 --speed=115200"'
+fi
+MENU_CFG_REPLACE=""
+if [ "$HAS_MENU_CFG" = "1" ]; then
+    MENU_CFG_REPLACE=", { \"iso\": \"/$ISO_NAME\", \"org\": \"/isolinux/menu.cfg\", \"new\": \"/ventoy/menu.cfg\" }"
+fi
+# conf_replace org paths must match the files inside the iso: /boot/grub2/grub.cfg (UEFI) and /isolinux/menu.cfg (legacy BIOS)
+cat > /mnt/ventoy/ventoy/ventoy.json <<EOF
+{
+    "control": [
+        { "VTOY_DEFAULT_IMAGE": "/$ISO_NAME" },
+        { "VTOY_MENU_TIMEOUT": "5" },
+        { "VTOY_SECONDARY_BOOT_MENU": "0" }
+    ],
+    "theme": { $THEME },
+    "conf_replace": [
+        { "iso": "/$ISO_NAME", "org": "/boot/grub2/grub.cfg", "new": "/ventoy/grub.cfg" }$MENU_CFG_REPLACE
+    ]
+}
+EOF
+python3 -m json.tool /mnt/ventoy/ventoy/ventoy.json
+cat "$GRUB_CFG"
+
+sync
+umount /mnt/ventoy
+echo "PHOTON_VENTOY_OK"
+'@
 
 
 $Scriptrun=
 @'
 
-# The core concept of this script is:
-#
-#   In case of a Photon OS iso in parameter Uri, it cannot be attached to an Azure virtual machine.
-#      The script configures the already added disk as Ventoy bootable disk containing the downloaded Photon OS iso bits, makes a vhd file with disk2vhd and does a blob upload vhd file for generating the Azure image.
-#      The Ventoy tool luckily is available for x86_64 Windows + Linux and arm64 Windows + Linux. 
-#      The disk2vhd tool is available for x86_64 Windows and arm64 Windows.
-# 
-#   In case of a Photon OS vhd file in parameter Uri, the Photon OS vhd file bits are downloaded and a blob upload vhd file for generating the Azure image is processed.
-#
+# Runs inside the Windows helper VM: the Photon OS vhd file bits are downloaded, extracted and uploaded as page blob for generating the Azure image.
 
 $PSDefaultParameterValues = @{ 'out-file:encoding' = 'ascii' }
 $IsVhdUploaded=$env:public + [IO.Path]::DirectorySeparatorChar + "VhdUploaded.txt"
 $tmpfilename=split-path -path $Uri -Leaf
-
-if ($tmpfilename.ToLower().EndsWith('.iso'))
-{
-    $tmpname=($tmpfilename -split ".iso")[0] + ".iso"
-    $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+($tmpfilename -split ".iso")[0] + ".vhd"
-    $downloadfile=$vhdfile
-}
-elseif ($tmpfilename.ToLower().EndsWith('.x86_64.vhd.tar.gz'))
-{
-    $tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
-    $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar + ($tmpfilename -split ".x86_64.vhd.tar.gz")[0] + ".vhd"
-    $downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
-}
-elseif ($tmpfilename.ToLower().EndsWith('.aarch64.vhd.tar.gz'))
-{
-    $tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
-    $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar + ($tmpfilename -split ".aarch64.vhd.tar.gz")[0] + ".vhd"
-    $downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
-}
-else
-{
-    $tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
-    $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname
-    $downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
-}
-
+# e.g. photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz contains photon-azure-5.0-dde71ec57.x86_64.vhd
+$tmpname=($tmpfilename -split [regex]::Escape(".vhd"))[0] + ".vhd"
+$vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname
+$downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
 
 
 #
@@ -322,40 +560,19 @@ else
 if ($env:username -ine $HelperVMLocalAdminUser)
 {
     $filetostart=$MyInvocation.MyCommand.Source
-    # $LocalUser=$env:computername + "\" + $HelperVMLocalAdminUser
     $LocalUser=$HelperVMLocalAdminUser
 
 	$PowershellFilePath =  "$PsHome\powershell.exe"
     $Taskname = "PhotonProcessing"
 	$Argument = "\"""+$PowershellFilePath +"\"" -WindowStyle Hidden -NoLogo -NoProfile -Executionpolicy unrestricted -command \"""+$filetostart+"\"""
 
-    # Scheduled task run takes time.
-    $timeout=3600
+    schtasks.exe /create /F /TN "$Taskname" /tr $Argument /SC ONCE /ST 00:00 /RU ${LocalUser} /RP ${HelperVMLocalAdminPwd} /RL HIGHEST /NP
+    start-sleep -s 1
+    schtasks /Run /TN "$Taskname" /I
 
-    $i=0
-    $rc=0
-    do
-    {
-        $i++
-        try
-        {
-            if ($rc -eq 0)
-            {
-                schtasks.exe /create /F /TN "$Taskname" /tr $Argument /SC ONCE /ST 00:00 /RU ${LocalUser} /RP ${HelperVMLocalAdminPwd} /RL HIGHEST /NP
-                start-sleep -s 1
-                schtasks /Run /TN "$Taskname" /I
-                start-sleep -s 1
-                $rc=1
-            }
-            if ($rc -eq 1)
-            {
-                start-sleep -s 1
-                $i++
-            }
-        }
-        catch {}
-    }
-    until ((test-path(${IsVhdUploaded})) -or ($i -gt $timeout))
+    # Scheduled task run takes time. The custom script extension times out after 90 minutes.
+    $timeout=(get-date).AddMinutes(85)
+    do { start-sleep -s 5 } until ((test-path(${IsVhdUploaded})) -or ((get-date) -gt $timeout))
     exit
 }
 
@@ -383,195 +600,35 @@ if (Test-Path -d $tmppath)
         cd $tmppath
         $RootDrive="'"+$(split-path -path $tmppath -Qualifier)+"'"
         $disk = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID=$RootDrive" | select-object @{Name="FreeGB";Expression={[math]::Round($_.Freespace/1GB,2)}}
-        if ($disk.FreeGB -gt 35)
+        if ($disk.FreeGB -gt 20)
         {
-
             install-module PS7Zip -force
 
-            if ($tmpfilename.ToLower().EndsWith('.iso'))
+            if (!(Test-Path $vhdfile))
             {
-
-                # Partition disk and assign driveletter U
-                $TmpFile="$env:TEMP\Drive.txt"
-                write-output 'select disk 2'                          >"$TmpFile"
-                write-output 'ATTRIBUTES DISK CLEAR READONLY'        >>"$TmpFile"
-                write-output 'clean'                                 >>"$TmpFile"
-                write-output 'create partition primary'              >>"$TmpFile"
-                write-output 'select partition 1'                    >>"$TmpFile"
-                write-output 'active'                                >>"$TmpFile"
-                write-output 'format fs=ntfs unit=64K label=U quick' >>"$TmpFile"
-                write-output 'assign letter=U'                       >>"$TmpFile"
-                diskpart /S "$TmpFile"
-
-                # Download and install Ventoy
-                c:\windows\system32\curl.exe -J -L -O "https://github.com/ventoy/Ventoy/releases/download/v1.0.88/ventoy-1.0.88-windows.zip"
-                Expand-7Zip -FullName ventoy-1.0.88-windows.zip -destinationpath "$env:TEMP" -ErrorAction SilentlyContinue
-                cmd /c "" "$env:TEMP\ventoy-1.0.88\Ventoy2Disk.exe" VTOYCLI /I /Drive:U: /NOUSBCheck
-
-                # Download disk2vhd
-                c:\windows\system32\curl.exe -J -L -O "https://download.sysinternals.com/files/Disk2vhd.zip"
-                Expand-7Zip -FullName Disk2vhd.zip -destinationpath "$env:TEMP" -ErrorAction SilentlyContinue
-
-                # reassign drive letter U to Ventoy volume
-                $VentoyPath=(get-volume | SELECT -PROPERTY DriveLetter,FileSystemLabel, DriveType, Path | where-object {($_.DriveType -ieq 'fixed') -and ($_.FileSystemLabel -ieq 'ventoy')}).Path
-                $partition = get-partition | select -property AccessPaths,diskNumber,partitionnumber | where-object {($_.AccessPaths -ieq $VentoyPath)}
-                Set-Partition -DiskNumber $partition.disknumber -PartitionNumber $partition.partitionnumber -NewDriveLetter U
-
-                # Download iso to the appropriate disk
-                set-location -Path U:
                 c:\windows\system32\curl.exe -J -O -L $Uri
-
-                # mount iso to extract grub.cfg and isolinux.cfg for serial configuration
-                mkdir U:\ventoy
-                $mountResult = Mount-DiskImage U:\$tmpname -PassThru
-                $driveLetter = ($mountResult | Get-Volume).DriveLetter
-                copy ${driveLetter}:\boot\grub2\grub.cfg U:\ventoy\grub.cfg
-                copy ${driveLetter}:\isolinux\isolinux.cfg U:\ventoy\isolinux.cfg
-                copy ${driveLetter}:\isolinux\menu.cfg U:\ventoy\menu.cfg
-                Dismount-DiskImage -ImagePath U:\$tmpname
-
-                write-output "$tmpname" >"U:\ventoy\ventoy.dat"
-
-                # Ventoy injection files
-                $FileName = "U:\ventoy\grub.cfg"
-                $Pattern = "set default=0"  
-                $FileOriginal = Get-Content $FileName
-                [String[]] $FileModified = @() 
-                Foreach ($Line in $FileOriginal)
-                {   
-                    $FileModified += $Line
-                    if ( $Line.Trim() -eq $Pattern ) 
-                    {
-                        #Add Lines after the selected pattern 
-                        $FileModified += "serial --unit=0 --speed=115200"
-                        $FileModified += "serial --unit=1 --speed=115200"
-                    } 
-                }
-                Set-Content -Path $fileName -Value $FileModified -Force
-
-                $FileName = "U:\ventoy\isolinux.cfg"
-                $Pattern = "timeout 0"  
-                $FileOriginal = Get-Content $FileName
-                [String[]] $FileModified = @() 
-                Foreach ($Line in $FileOriginal)
-                {   
-                    $FileModified += $Line
-                    if ( $Line.Trim() -eq $Pattern ) 
-                    {
-                        #Add Lines after the selected pattern 
-                        $FileModified += "serial 0 115200"
-                        $FileModified += "serial 1 115200"
-                    } 
-                }
-                Set-Content -Path $fileName -Value $FileModified -Force
-
-                $FileName = "U:\ventoy\menu.cfg"
-                $Pattern = "append initrd="  
-                $FileOriginal = Get-Content $FileName
-                [String[]] $FileModified = @() 
-                Foreach ($Line in $FileOriginal)
-                {   
-                    if ( $Line.Trim() -ilike "*$Pattern*" ) 
-                    {
-                        $FileModified += [System.String]::Concat($Line," console=ttyS0,115200")
-                        $FileModified += [System.String]::Concat($Line," console=ttyS1,115200")
-                    }
-                    else
-                    {
-                        $FileModified += $Line
-                    }
-                }
-                Set-Content -Path $fileName -Value $FileModified -Force            
-
-                $TmpFile="U:\ventoy\ventoy.json"
-		        $variable=[System.String]::Concat('            "iso": "/',$tmpname,'",')
-                write-output '{'                                                                                >"$TmpFile"
-                write-output '    "theme": {'                                                                  >>"$TmpFile"
-                write-output '        "display_mode": "serial_console",'                                       >>"$TmpFile"
-                write-output '        "serial_param": "--unit=0 --speed=115200 --word=8 --parity=no --stop=1"' >>"$TmpFile"
-                write-output '    },'                                                                          >>"$TmpFile"
-                write-output '    "theme_legacy": {'                                                           >>"$TmpFile"
-                write-output '        "display_mode": "serial_console",'                                       >>"$TmpFile"
-                write-output '        "serial_param": "--unit=0 --speed=115200 --word=8 --parity=no --stop=1"' >>"$TmpFile"
-                write-output '    },'                                                                          >>"$TmpFile"
-                write-output '    "theme_uefi": {'                                                             >>"$TmpFile"
-                write-output '        "display_mode": "serial_console",'                                       >>"$TmpFile"
-                write-output '        "serial_param": "--unit=0 --speed=115200 --word=8 --parity=no --stop=1"' >>"$TmpFile"
-                write-output '    },'                                                                          >>"$TmpFile"
-                write-output '    "conf_replace_legacy": ['                                                    >>"$TmpFile"
-                write-output '        {'                                                                       >>"$TmpFile"
-                write-output "$variable"                                                                       >>"$TmpFile"
-                write-output '            "org": "/boot/grub2/boot.cfg",'                                      >>"$TmpFile"
-                write-output '            "new": "/ventoy/boot.cfg"'                                           >>"$TmpFile"
-                write-output '        },'                                                                      >>"$TmpFile"
-                write-output '        {'                                                                       >>"$TmpFile"
-                write-output "$variable"                                                                       >>"$TmpFile"
-                write-output '            "org": "/isolinux/menu.cfg",'                                        >>"$TmpFile"
-                write-output '            "new": "/ventoy/menu.cfg"'                                           >>"$TmpFile"
-                write-output '        },'                                                                      >>"$TmpFile"
-                write-output '        {'                                                                       >>"$TmpFile"
-                write-output "$variable"                                                                       >>"$TmpFile"
-                write-output '            "org": "/isolinux/isolinux.cfg",'                                    >>"$TmpFile"
-                write-output '            "new": "/ventoy/isolinux.cfg"'                                       >>"$TmpFile"
-                write-output '        }'                                                                       >>"$TmpFile"
-                write-output '    ],'                                                                          >>"$TmpFile"
-                write-output '    "conf_replace_uefi": ['                                                      >>"$TmpFile"
-                write-output '        {'                                                                       >>"$TmpFile"
-                write-output "$variable"                                                                       >>"$TmpFile"
-                write-output '            "org": "/boot/grub2/boot.cfg",'                                      >>"$TmpFile"
-                write-output '            "new": "/ventoy/boot.cfg"'                                           >>"$TmpFile"
-                write-output '        },'                                                                      >>"$TmpFile"
-                write-output '        {'                                                                       >>"$TmpFile"
-                write-output "$variable"                                                                       >>"$TmpFile"
-                write-output '            "org": "/isolinux/menu.cfg",'                                        >>"$TmpFile"
-                write-output '            "new": "/ventoy/menu.cfg"'                                           >>"$TmpFile"
-                write-output '        },'                                                                      >>"$TmpFile"
-                write-output '        {'                                                                       >>"$TmpFile"
-                write-output "$variable"                                                                       >>"$TmpFile"
-                write-output '            "org": "/isolinux/isolinux.cfg",'                                    >>"$TmpFile"
-                write-output '            "new": "/ventoy/isolinux.cfg"'                                       >>"$TmpFile"
-                write-output '        }'                                                                       >>"$TmpFile"
-                write-output '    ]'                                                                           >>"$TmpFile"
-                write-output '}'                                                                               >>"$TmpFile"
-
-                # assign drive letter V to vtoyefi volume to be selectable for disk2vhd
-                $VToyEFIPath=(get-volume | SELECT -PROPERTY DriveLetter,FileSystemLabel, DriveType, Path | where-object {($_.DriveType -ieq 'fixed') -and ($_.FileSystemLabel -ieq 'vtoyefi')}).Path
-                $partition = get-partition | select -property AccessPaths,diskNumber,partitionnumber | where-object {($_.AccessPaths -ieq $VToyEFIPath)}
-                Set-Partition -DiskNumber $partition.disknumber -PartitionNumber $partition.partitionnumber -NewDriveLetter V
-
-                # Make vhd file
-                cmd /c "$env:TEMP\disk2vhd64.exe" /accepteula -c U: V: $vhdfile
-
             }
-            else
+            if ((Test-Path $downloadfile) -and ((([IO.Path]::GetExtension($tmpfilename)) -ieq ".gz")))
             {
+                try
+                {
+                    $PatchCheck=$tmppath + [io.path]::DirectorySeparatorChar+"photon-azure-3.0-49fd219.vhd.tar.gz"
+                    if ($downloadfile -ieq $PatchCheck)
+                    {
+                         $PatchDir = $tmppath + [io.path]::DirectorySeparatorChar+ "root" + [io.path]::DirectorySeparatorChar+ "photon" + [io.path]::DirectorySeparatorChar+ "stage" + [io.path]::DirectorySeparatorChar+ "azure"
+                         mkdir $PatchDir
+                         $vhdfile=$PatchDir + [io.path]::DirectorySeparatorChar+$tmpname
+                    }
+                    c:\windows\system32\tar.exe -xzvf $downloadfile
+                }
+                catch{}
                 if (!(Test-Path $vhdfile))
                 {
-                    # Invoke-WebRequest $Uri -OutFile $tmpfilename
-                    c:\windows\system32\curl.exe -J -O -L $Uri
-                }
-                if ((Test-Path $downloadfile) -and ((([IO.Path]::GetExtension($tmpfilename)) -ieq ".gz")))
-                {
-                    try
-                    {
-                        $PatchCheck=$tmppath + [io.path]::DirectorySeparatorChar+"photon-azure-3.0-49fd219.vhd.tar.gz"
-                        if ($downloadfile -ieq $PatchCheck)
-                        {
-                             $PatchDir = $tmppath + [io.path]::DirectorySeparatorChar+ "root" + [io.path]::DirectorySeparatorChar+ "photon" + [io.path]::DirectorySeparatorChar+ "stage" + [io.path]::DirectorySeparatorChar+ "azure"
-                             mkdir $PatchDir
-                             $vhdfile=$PatchDir + [io.path]::DirectorySeparatorChar+$tmpname
-                        }
-                        c:\windows\system32\tar.exe -xzvf $downloadfile
-                    }
-                    catch{}
-                    if (!(Test-Path $vhdfile))
-                    {
-                            # Windows tar does not extract photon-azure-2.0-304b817.vhd.gz but PS7Zip does.
-                            # work directory must be path of $tmpfilename
-                            Expand-7Zip -FullName $tmpfilename -destinationpath $tmpname -ErrorAction SilentlyContinue
-                            # vhdfile should now be unextracted into directory $tmpname
-                            $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname + [io.path]::DirectorySeparatorChar + $tmpname
-                    }
+                        # Windows tar does not extract photon-azure-2.0-304b817.vhd.gz but PS7Zip does.
+                        # work directory must be path of $tmpfilename
+                        Expand-7Zip -FullName $tmpfilename -destinationpath $tmpname -ErrorAction SilentlyContinue
+                        # vhdfile should now be unextracted into directory $tmpname
+                        $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpname + [io.path]::DirectorySeparatorChar + $tmpname
                 }
             }
         }
@@ -579,301 +636,276 @@ if (Test-Path -d $tmppath)
 
     if (Test-Path $vhdfile)
     {
-	    # Azure login
 	    $azcontext=get-azcontext
 	    if ($azcontext)
 	    {
-		    $result = get-azresourcegroup -name $ResourceGroupName -Location $LocationName -ErrorAction SilentlyContinue
-		    if ($result)
+		    $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
+		    if ($storageaccount)
 		    {
-			    $storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
-			    if ($storageaccount)
+                $result=get-azstorageblob -Container ${HelperVMContainerName} -Blob ${ImageName} -Context $storageaccount.Context -ErrorAction SilentlyContinue
+                if ( -not ($result))
 			    {
-                    $result=get-azstoragecontainer -Name ${HelperVMContainerName} -Context $storageaccount.Context -ErrorAction SilentlyContinue
-                    if ($result)
-				    {
-                        $result=get-azstorageblob -Container ${HelperVMContainerName} -Blob ${ImageName} -Context $storageaccount.Context -ErrorAction SilentlyContinue
-                        if ( -not ($result))
-					    {
-                            Set-AzStorageBlobContent -Container ${HelperVMContainerName} -File $vhdfile -Blob ${ImageName} -BlobType page -Context $storageaccount.Context
-					    }
-                        $result=get-azstorageblob -Container ${HelperVMContainerName} -Blob ${ImageName} -Context $storageaccount.Context -ErrorAction SilentlyContinue
-                        if ($result)
-					    {
-                            $vhdfile | out-file -filepath $IsVhdUploaded -append
-                        }
-				    }
+                    Set-AzStorageBlobContent -Container ${HelperVMContainerName} -File $vhdfile -Blob ${ImageName} -BlobType page -Context $storageaccount.Context
 			    }
+                $result=get-azstorageblob -Container ${HelperVMContainerName} -Blob ${ImageName} -Context $storageaccount.Context -ErrorAction SilentlyContinue
+                if ($result)
+			    {
+                    $vhdfile | out-file -filepath $IsVhdUploaded -append
+                }
 		    }
 	    }
     }
-
 }
-
 
 '@
 
-# create lab resource group if it does not exist
-$result = get-azresourcegroup -name $ResourceGroupName -Location $LocationName -ErrorAction SilentlyContinue
-if ( -not $($result))
-{
-    New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName
-}
 
-# storageaccount
-$storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
-if ( -not $($storageaccount))
+if ($IsIso)
 {
-	$storageaccount=New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind $StorageKind -SkuName $StorageAccountType -ErrorAction SilentlyContinue
-	if ( -not $($storageaccount))
+    $existingVersion = Get-AzResourceOrNull { Get-AzGalleryImageVersion -ResourceGroupName $ResourceGroupName -GalleryName $GalleryName -GalleryImageDefinitionName $ImageName -Name $ImageVersion }
+    if ($existingVersion)
     {
-        write-output "Storage account has not been created. Check if the name is already taken."
-        break
+        write-output "Image $ImageName version $ImageVersion already exists in gallery ${GalleryName}: $($existingVersion.Id)"
+        return
+    }
+
+    $capacity = Test-HelperVMCapacity -Location $LocationName -VMSize $HelperVMSize
+    if ($capacity.HyperVGenerations -notmatch 'V2') { throw "Helper VM size $HelperVMSize does not support HyperVGeneration V2." }
+    if (-not (Get-AzResourceOrNull { Get-AzResourceGroup -Name $ResourceGroupName })) { $null = New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName }
+    $HelperVMPublisherName = "Canonical"
+    $HelperVMofferName = "0001-com-ubuntu-server-jammy"
+    if ($capacity.Architecture -eq 'Arm64') { $HelperVMsku = "22_04-lts-arm64" } else { $HelperVMsku = "22_04-lts-gen2" }
+
+    $ImageCreated = $false
+    try
+    {
+        # The empty data disk becomes the bootable Ventoy disk and later the image source.
+        write-output "Creating data disk $HelperVMDataDiskName ..."
+        $diskConfig = New-AzDiskConfig -Location $LocationName -CreateOption Empty -DiskSizeGB $HelperVMDiskSizeGB -SkuName StandardSSD_LRS -OsType Linux -HyperVGeneration $HyperVGeneration -Architecture $Architecture
+        $Disk = New-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDataDiskName -Disk $diskConfig
+
+        write-output "Creating helper VM $HelperVMName ($HelperVMSize, Ubuntu $HelperVMsku) ..."
+        $nic = New-HelperVMNetwork
+        $LocalAdminUserCredential = New-Object System.Management.Automation.PSCredential ($HelperVMLocalAdminUser, (ConvertTo-SecureString $HelperVMLocalAdminPwd -AsPlainText -Force))
+        $vmConfig = New-AzVMConfig -VMName $HelperVMName -VMSize $HelperVMSize
+        $vmConfig = Set-AzVMOperatingSystem -VM $vmConfig -Linux -ComputerName $HelperVMComputerName -Credential $LocalAdminUserCredential
+        $vmConfig = Set-AzVMSourceImage -VM $vmConfig -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version latest
+        $vmConfig = Set-AzVMOSDisk -VM $vmConfig -CreateOption FromImage -StorageAccountType StandardSSD_LRS
+        $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $nic.Id
+        $vmConfig = Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $Disk.Id -Name $HelperVMDataDiskName -Lun 1 -CreateOption Attach
+        $vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Enable
+        $null = New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
+
+        write-output "Preparing the Ventoy disk inside the helper VM. Downloading $DownloadFileName takes a while ..."
+        $bash = $VentoyBashScript.Replace("`r`n", "`n").
+            Replace('__URI__', $Uri).
+            Replace('__ISO_NAME__', $DownloadFileName).
+            Replace('__ARCHITECTURE__', $Architecture).
+            Replace('__HYPERV_GENERATION__', $HyperVGeneration).
+            Replace('__VENTOY_VERSION__', $VentoyVersion).
+            Replace('__VENTOY_SHA256__', [string]$VentoySha256).
+            Replace('__DISK_SIZE_GB__', [string]$HelperVMDiskSizeGB)
+        $ProtectedSettings = @{ "script" = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bash)) }
+        $extensionError = $null
+        try
+        {
+            $null = Set-AzVMExtension -ResourceGroupName $ResourceGroupName -Location $LocationName -VMName $HelperVMName -Name "PhotonOSVentoy" -Publisher "Microsoft.Azure.Extensions" -ExtensionType "CustomScript" -TypeHandlerVersion "2.1" -ProtectedSettings $ProtectedSettings
+        }
+        catch { $extensionError = $_.Exception.Message }
+        # The bash script runs with set -e, a failure surfaces as extension error. The stdout/stderr substatuses are informational.
+        $extension = Get-AzResourceOrNull { Get-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -Name "PhotonOSVentoy" -Status }
+        $substatuses = @($extension.SubStatuses) + @($extension.InstanceView.Substatuses)
+        if (-not ($substatuses | Where-Object { $_ }))
+        {
+            $vmStatus = Get-AzResourceOrNull { Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName -Status }
+            $substatuses = @(($vmStatus.Extensions | Where-Object { $_.Name -eq 'PhotonOSVentoy' }).Substatuses)
+        }
+        $extensionOutput = ($substatuses | Where-Object { $_ } | ForEach-Object { $_.Message }) -join "`n"
+        if ($extensionOutput) { write-output $extensionOutput }
+        if ($extensionError)
+        {
+            throw "Preparing the Ventoy disk failed. $extensionError"
+        }
+        if ($extensionOutput -and ($extensionOutput -notmatch 'PHOTON_VENTOY_OK'))
+        {
+            throw "Preparing the Ventoy disk did not complete."
+        }
+        if (-not $extensionOutput) { Write-Warning "The extension output is not available, relying on the extension status Succeeded." }
+
+        write-output "Detaching data disk $HelperVMDataDiskName ..."
+        $null = Stop-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName -Force
+        $vm = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName
+        $null = Remove-AzVMDataDisk -VM $vm -DataDiskNames $HelperVMDataDiskName
+        $null = Update-AzVM -ResourceGroupName $ResourceGroupName -VM $vm
+        $i = 0
+        do
+        {
+            start-sleep -Seconds 5
+            $Disk = Get-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDataDiskName
+            $i++
+        }
+        until (($Disk.DiskState -ieq 'Unattached') -or ($i -gt 60))
+        if ($Disk.DiskState -ine 'Unattached') { throw "Data disk $HelperVMDataDiskName is still $($Disk.DiskState)." }
+
+        $gallery = Get-AzResourceOrNull { Get-AzGallery -ResourceGroupName $ResourceGroupName -Name $GalleryName }
+        if (-not $gallery)
+        {
+            write-output "Creating Azure Compute Gallery $GalleryName ..."
+            $gallery = New-AzGallery -ResourceGroupName $ResourceGroupName -Name $GalleryName -Location $LocationName -Description "VMware Photon OS images"
+        }
+        $definition = Get-AzResourceOrNull { Get-AzGalleryImageDefinition -ResourceGroupName $ResourceGroupName -GalleryName $GalleryName -Name $ImageName }
+        if (-not $definition)
+        {
+            # Specialized: the Photon OS installer has no Azure provisioning agent, hence a VM from this image must not have an OS profile.
+            $definition = New-AzGalleryImageDefinition -ResourceGroupName $ResourceGroupName -GalleryName $GalleryName -Name $ImageName -Location $LocationName `
+                -Publisher "PhotonOS" -Offer ("photon-" + ($ImageVersion -replace '\.0$', '')) -Sku $ImageName `
+                -OsState Specialized -OsType Linux -HyperVGeneration $HyperVGeneration -Architecture $Architecture `
+                -Description "VMware Photon OS installer $DownloadFileName on a Ventoy disk"
+        }
+
+        write-output "Creating image version $ImageVersion of $ImageName. This takes a few minutes ..."
+        $imageVersionObject = New-AzGalleryImageVersion -ResourceGroupName $ResourceGroupName -GalleryName $GalleryName -GalleryImageDefinitionName $ImageName -Name $ImageVersion -Location $LocationName `
+            -OSDiskImage @{ Source = @{ Id = $Disk.Id } } -TargetRegion @(@{ Name = $LocationName; ReplicaCount = 1 })
+        $ImageCreated = $true
+        write-output "Image created: $($imageVersionObject.Id)"
+    }
+    finally
+    {
+        if ($SkipCleanup) { write-output "SkipCleanup: the helper VM $HelperVMName and its resources are kept." }
+        else
+        {
+            write-output "Removing helper resources ..."
+            Remove-HelperVMResources
+        }
+        if (-not $ImageCreated) { write-output "Error: Image creation failed." }
     }
 }
-do {start-sleep -Milliseconds 1000} until ($((get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName).ProvisioningState) -ieq "Succeeded")
-$storageaccountkey=(get-azstorageaccountkey -ResourceGroupName $ResourceGroupName -name $StorageAccountName)
-$storageaccount=get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
-
-
-$result=get-azstoragecontainer -Name ${HelperVMContainerName} -Context $storageaccount.Context -ErrorAction SilentlyContinue
-if ( -not $($result))
+else
 {
-    new-azstoragecontainer -Name ${HelperVMContainerName} -Context $storageaccount.Context -ErrorAction SilentlyContinue -Permission Blob
-}
+    $existingImage = Get-AzResourceOrNull { Get-AzImage -ResourceGroupName $ResourceGroupName -ImageName $ImageName }
+    if ($existingImage)
+    {
+        write-output "Image $ImageName already exists: $($existingImage.Id)"
+        return
+    }
 
-$Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.Name -ieq $HelperVMDiskName)}
-if (-not $($Disk))
-{
-	# a temporary virtual machine is necessary because inside it downloads Photon and uploads the extracted disk as image base.
+    $capacity = Test-HelperVMCapacity -Location $LocationName -VMSize $HelperVMSize
+    if ($capacity.Architecture -eq 'Arm64') { throw "Vhd urls are processed on a Windows helper VM. Specify an x64 -HelperVMSize." }
+    if ($capacity.TempDiskMB -lt 20480) { throw "Vhd urls are extracted on the temporary disk of the helper VM. $HelperVMSize has no or a too small temporary disk, e.g. use Standard_E2s_v3." }
+    if (-not (Get-AzResourceOrNull { Get-AzResourceGroup -Name $ResourceGroupName })) { $null = New-AzResourceGroup -Name $ResourceGroupName -Location $LocationName }
+    $HelperVMPublisherName = "MicrosoftWindowsServer"
+    $HelperVMofferName = "WindowsServer"
+    $HelperVMsku = "2022-datacenter-core-smalldisk-g2"
 
-	[Microsoft.Azure.Commands.Compute.Models.PSVirtualMachine]$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName -ErrorAction SilentlyContinue
-	if (-not ($VM))
-	{
-    	# networksecurityruleconfig
-    	$nsg=get-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
-    	if ( -not $($nsg))
-    	{
-    		$nsgRule1 = New-AzNetworkSecurityRuleConfig -Name nsgRule1 -Description "Allow SSH" `
-    		-Access Allow -Protocol Tcp -Direction Inbound -Priority 110 `
-    		-SourceAddressPrefix Internet -SourcePortRange * `
-    		-DestinationAddressPrefix * -DestinationPortRange 22
+    $ImageCreated = $false
+    $contextfile = $($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext.txt"
+    $ScriptFile = $($env:public) + [IO.Path]::DirectorySeparatorChar + "importazcontext.ps1"
+    $Blobtmp = "importazcontext.ps1"
+    try
+    {
+        # storageaccount with a private container
+        $storageaccount = Get-AzResourceOrNull { Get-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName }
+        if (-not $storageaccount)
+        {
+            $storageaccount = New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Location $LocationName -Kind $StorageKind -SkuName $StorageAccountType -AllowBlobPublicAccess $false -MinimumTlsVersion TLS1_2
+        }
+        do {start-sleep -Milliseconds 1000} until ($((get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName).ProvisioningState) -ieq "Succeeded")
+        $storageaccount = Get-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName
+        $storageaccountkey = (Get-AzStorageAccountKey -ResourceGroupName $ResourceGroupName -Name $StorageAccountName)[0].Value
+        if (-not (Get-AzResourceOrNull { Get-AzStorageContainer -Name $HelperVMContainerName -Context $storageaccount.Context }))
+        {
+            $null = New-AzStorageContainer -Name $HelperVMContainerName -Context $storageaccount.Context -Permission Off
+        }
 
-    		$nsgRule2 = New-AzNetworkSecurityRuleConfig -Name nsgRule2 -Description "Allow RDP" `
-    		-Access Allow -Protocol Tcp -Direction Inbound -Priority 120 `
-    		-SourceAddressPrefix Internet -SourcePortRange * `
-    		-DestinationAddressPrefix * -DestinationPortRange 3389
-    		$nsg = New-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -Location $LocationName -SecurityRules $nsgRule1,$nsgRule2
-    	}
+        write-output "Creating helper VM $HelperVMName ($HelperVMSize, Windows Server 2022) ..."
+        $nic = New-HelperVMNetwork
+        $LocalAdminUserCredential = New-Object System.Management.Automation.PSCredential ($HelperVMLocalAdminUser, (ConvertTo-SecureString $HelperVMLocalAdminPwd -AsPlainText -Force))
+        $vmConfig = New-AzVMConfig -VMName $HelperVMName -VMSize $HelperVMSize
+        $vmConfig = Set-AzVMOperatingSystem -VM $vmConfig -Windows -ComputerName $HelperVMComputerName -Credential $LocalAdminUserCredential
+        $vmConfig = Set-AzVMSourceImage -VM $vmConfig -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version latest
+        $vmConfig = Add-AzVMNetworkInterface -VM $vmConfig -Id $nic.Id
+        $vmConfig = Set-AzVMBootDiagnostic -VM $vmConfig -Enable
+        $null = New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
 
-    	# set network if not already set
-    	$vnet = get-azvirtualnetwork -name $HelperVMNetworkName -ResourceGroupName $resourcegroupname -ErrorAction SilentlyContinue
-    	if ( -not $($vnet))
-    	{
-    		$ServerSubnet  = New-AzVirtualNetworkSubnetConfig -Name frontendSubnet -AddressPrefix $HelperVMSubnetAddressPrefix -NetworkSecurityGroup $nsg
-    		$vnet = New-AzVirtualNetwork -Name $HelperVMNetworkName -ResourceGroupName $ResourceGroupName -Location $LocationName -AddressPrefix $HelperVMVnetAddressPrefix -Subnet $ServerSubnet
-    		$vnet | Set-AzVirtualNetwork
-    	}
+        # Prepare scriptfile
+        $null = Save-AzContext -Path $contextfile -Force
+        $contextfileEncoded=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext_enc.txt"
+        if ((test-path($contextfileEncoded)) -eq $true) {remove-item -path ($contextfileEncoded) -force}
+        $null = certutil -encode $contextfile $contextfileEncoded
+        $content = get-content -path $contextfileEncoded
+        $value = '$CachedAzContext=@'+"'`r`n"
+        # https://stackoverflow.com/questions/42407136/difference-between-redirection-to-null-and-out-null
+        $null = new-item $ScriptFile -type file -force -value $value
+        out-file -inputobject $content -FilePath $ScriptFile -Encoding ASCII -Append
+        out-file -inputobject "'@" -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$Uri="'+$Uri+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$tmppath="'+$HelperVMsize_TempPath+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$ResourceGroupName="'+$ResourceGroupName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$StorageAccountName="'+$StorageAccountName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$ImageName="'+$ImageName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$HelperVMContainerName="'+$HelperVMContainerName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$HelperVMLocalAdminUser="'+$HelperVMLocalAdminUser+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        $tmp='$HelperVMLocalAdminPwd="'+$HelperVMLocalAdminPwd+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
+        out-file -inputobject $ScriptRun -FilePath $ScriptFile -Encoding ASCII -append
+        remove-item -path ($contextfileEncoded) -force
 
-		# create the temporary virtual machine
+        # blob upload of scriptfile
+        $null = Set-AzStorageBlobContent -Container ${HelperVMContainerName} -File $ScriptFile -Blob ${BlobTmp} -BlobType Block -Context $storageaccount.Context -Force
 
-		# virtual machine local admin setting
-		$VMLocalAdminSecurePassword = ConvertTo-SecureString $HelperVMLocalAdminPwd -AsPlainText -Force
-		$LocalAdminUserCredential = New-Object System.Management.Automation.PSCredential ($HelperVMLocalAdminUser, $VMLocalAdminSecurePassword)
-
-		# Create a public IP address
-		$nic=get-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
-		if ( -not $($nic))
-		{
-			$pip = New-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Location $LocationName -Name $HelperVMPublicIPDNSName -AllocationMethod Static -IdleTimeoutInMinutes 4
-			# Create a virtual network card and associate with public IP address and NSG
-			$nic = New-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -Location $LocationName `
-				-SubnetId $vnet.Subnets[0].Id -PublicIpAddressId $pip.Id -NetworkSecurityGroupId $nsg.Id
-		}
-
-		# Create a virtual machine configuration
-		$vmConfig = New-AzVMConfig -VMName $HelperVMName -VMSize $HelperVMsize | `
-		Add-AzVMNetworkInterface -Id $nic.Id
-
-        # Get-AzVMImage -Location switzerlandnorth -PublisherName MicrosoftWindowsServer -Offer WindowsServer -Skus 2019-datacenter-with-containers-smalldisk-g2
-        $productversion=((get-azvmimage -Location $LocationName -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku)[(get-azvmimage -Location $LocationName -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku).count -1 ]).version
-
-		$vmimage= get-azvmimage -Location $LocationName -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion
-		if (-not ([Object]::ReferenceEquals($vmimage,$null)))
-		{
-			if (-not ([Object]::ReferenceEquals($vmimage.PurchasePlan,$null)))
-			{
-				$agreementTerms=Get-AzMarketplaceterms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name
-				Set-AzMarketplaceTerms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name -Terms $agreementTerms -Accept
-				$agreementTerms=Get-AzMarketplaceterms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name
-				Set-AzMarketplaceTerms -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name -Terms $agreementTerms -Accept
-				$vmConfig = Set-AzVMPlan -VM $vmConfig -publisher $vmimage.PurchasePlan.publisher -Product $vmimage.PurchasePlan.product -name $vmimage.PurchasePlan.name
-			}
-
-			$vmConfig = Set-AzVMOperatingSystem -Windows -VM $vmConfig -ComputerName $HelperVMComputerName -Credential $LocalAdminUserCredential | `
-			Set-AzVMSourceImage -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion		
-			$vmConfig | Set-AzVMBootDiagnostic -Disable
-
-            if ($DownloadURL.ToLower().EndsWith('.iso'))
-            {
-                $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
-                if (-not $($Disk))
-                {
-                    $diskConfig = New-AzDiskConfig -AccountType 'Standard_LRS' -Location $LocationName -HyperVGeneration $HyperVGeneration -CreateOption Empty -DiskSizeGB ${HelperVMDiskSizeGB} -OSType Linux
-                    $Disk = New-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDiskName -Disk $diskConfig
-                    do {start-sleep -Milliseconds 1000} until ($((get-azdisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDiskName).ProvisioningState) -ieq "Succeeded")
-                    $vmConfig = Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $Disk.Id -Name $HelperVMDiskName -Lun 1 -CreateOption Attach
-                }
-            }
-
-			# Create the virtual machine		
-			New-AzVM -ResourceGroupName $ResourceGroupName -Location $LocationName -VM $vmConfig
-			
-			$VM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName			
-			Set-AzVMBootDiagnostic -VM $VM -Enable -ResourceGroupName $ResourceGroupName -StorageAccountName $StorageAccountName			
-		}
-	}
-
-    $objBlob=get-azstorageblob -Container $HelperVMContainerName -Blob $BlobName -Context $storageaccount.Context -ErrorAction SilentlyContinue
-	$objVM = Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName -status -ErrorAction SilentlyContinue
-	if ((-not ([Object]::ReferenceEquals($objVM,$null))) -and (!($objBlob)))
-	{
-		# Prepare scriptfile
-		$contextfileEncoded=$($env:public) + [IO.Path]::DirectorySeparatorChar + "azcontext_enc.txt"
-		if ((test-path($contextfileEncoded)) -eq $true) {remove-item -path ($contextfileEncoded) -force}
-		certutil -encode $contextfile $contextfileEncoded
-		$content = get-content -path $contextfileEncoded
-		$ScriptFile = $($env:public) + [IO.Path]::DirectorySeparatorChar + "importazcontext.ps1"
-		$value = '$CachedAzContext=@'+"'`r`n"
-		# https://stackoverflow.com/questions/42407136/difference-between-redirection-to-null-and-out-null
-		$null = new-item $ScriptFile -type file -force -value $value
-		out-file -inputobject $content -FilePath $ScriptFile -Encoding ASCII -Append
-		out-file -inputobject "'@" -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$Uri="'+$Uri+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$tmppath="'+$HelperVMsize_TempPath+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$tenant="'+$((get-azcontext).tenant.id)+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$ResourceGroupName="'+$ResourceGroupName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$LocationName="'+$LocationName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$StorageAccountName="'+$StorageAccountName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$ImageName="'+$ImageName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$HelperVMContainerName="'+$HelperVMContainerName+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$HelperVMLocalAdminUser="'+$HelperVMLocalAdminUser+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		$tmp='$HelperVMLocalAdminPwd="'+$HelperVMLocalAdminPwd+'"'; out-file -inputobject $tmp -FilePath $ScriptFile -Encoding ASCII -Append
-		out-file -inputobject $ScriptRun -FilePath $ScriptFile -Encoding ASCII -append
-		remove-item -path ($contextfileEncoded) -force
-
-        # Extensions preparation
-		$Blobtmp="importazcontext.ps1"
+        # Remote install Az module
         $Extensions = Get-AzVMExtensionImage -Location $LocationName -PublisherName "Microsoft.Compute" -Type "CustomScriptExtension"
         $ExtensionPublisher= $Extensions[$Extensions.count-1].PublisherName
         $ExtensionType = $Extensions[$Extensions.count-1].Type
-        $ExtensionVersion = (($Extensions[$Extensions.count-1].Version)[0..2]) -join ""
-
-		# blob upload of scriptfile
-        $result=get-azstorageblob -Container $HelperVMContainerName -Blob ${BlobTmp} -Context $storageaccount.Context -ErrorAction SilentlyContinue
-        if (!($result))
-		{
-            Set-AzStorageBlobContent -Container ${HelperVMContainerName} -File $ScriptFile -Blob ${BlobTmp} -BlobType Block -Context $storageaccount.Context
-		}
-
-        # Remote install Az module
+        $ExtensionVersion = (($Extensions[$Extensions.count-1].Version) -split '\.')[0..1] -join "."
         $commandToExecute="powershell.exe Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force ; powershell install-module -name Az -force -ErrorAction SilentlyContinue; shutdown.exe /r /t 0"
-        $ScriptSettings = @{}
-        $ProtectedSettings = @{"storageAccountName" = $StorageAccountName; "storageaccountkey" = ($storageaccountkey[0]).value ; "commandToExecute" = $commandToExecute }
-        Set-AzVMExtension -ResourceGroupName $ResourceGroupName -Location $LocationName -VMName $HelperVMName -Name $ExtensionType -Publisher $ExtensionPublisher -ExtensionType $ExtensionType -TypeHandlerVersion $ExtensionVersion -Settings $ScriptSettings -ProtectedSettings $ProtectedSettings
-     	Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -Name $ExtensionType -force -ErrorAction SilentlyContinue
+        $ProtectedSettings = @{"commandToExecute" = $commandToExecute }
+        try
+        {
+            $null = Set-AzVMExtension -ResourceGroupName $ResourceGroupName -Location $LocationName -VMName $HelperVMName -Name $ExtensionType -Publisher $ExtensionPublisher -ExtensionType $ExtensionType -TypeHandlerVersion $ExtensionVersion -Settings @{} -ProtectedSettings $ProtectedSettings
+        }
+        catch { Write-Warning "Az module installation reported: $($_.Exception.Message)" }
+        $null = Remove-AzVMExtension -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -Name $ExtensionType -Force -ErrorAction SilentlyContinue
         # wait for the reboot
-        start-sleep 15
+        start-sleep 60
 
         # Run scriptfile
-        $Run = "C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.15\Downloads\0\$BlobTmp"
-        Set-AzVMCustomScriptExtension -Name "CustomScriptExtension" -Location $LocationName -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -StorageAccountName $StorageAccountName -ContainerName $HelperVMContainerName -FileName $BlobTmp -Run $Run
+        write-output "Downloading and uploading the Photon OS vhd inside the helper VM. This takes a while ..."
+        $null = Set-AzVMCustomScriptExtension -Name "CustomScriptExtension" -Location $LocationName -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -StorageAccountName $StorageAccountName -StorageAccountKey $storageaccountkey -ContainerName $HelperVMContainerName -FileName $BlobTmp -Run $BlobTmp
+        # the scriptfile contains the cached azcontext
+        $null = Remove-AzStorageBlob -Container $HelperVMContainerName -Blob $BlobTmp -Context $storageaccount.Context -Force
 
-        if ($DownloadURL.ToLower().EndsWith('.iso'))
+        if (-not (Get-AzResourceOrNull { Get-AzStorageBlob -Container $HelperVMContainerName -Blob $ImageName -Context $storageaccount.Context }))
         {
-            $HelperVMDiskName=((get-azdisk | where-object {$_.OsType -ieq 'Linux'})[0]).Name
+            throw "The vhd blob $ImageName has not been uploaded."
         }
-        else {$HelperVMDiskName=$ImageName}
-	}
-}
 
-if ((test-path($contextfile))) { remove-item -path ($contextfile) -force -ErrorAction SilentlyContinue }
-
-$Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.Name -ieq $HelperVMDiskName)}
-if (-not $($Disk))
-{
-    $urlOfUploadedVhd = "https://${StorageAccountName}.blob.core.windows.net/${HelperVMContainerName}/${ImageName}"
-    $storageAccountId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$StorageAccountName"
-    $diskConfig = New-AzDiskConfig -AccountType $StorageAccountType -Location $LocationName -HyperVGeneration $HyperVGeneration -CreateOption Import -StorageAccountId $storageAccountId -SourceUri $urlOfUploadedVhd
-    New-AzDisk -Disk $diskConfig -ResourceGroupName $resourceGroupName -DiskName $HelperVMDiskName -ErrorAction SilentlyContinue
-}
-
-$Image=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.name -ieq $Imagename)}
-if (-not $($Image))
-{
-    $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.Name -ieq $HelperVMDiskName)}
-    if (-not ([Object]::ReferenceEquals($Disk,$null)))
-    {
-        $imageconfig=new-azimageconfig -location $LocationName -HyperVGeneration $HyperVGeneration
-        $imageConfig = Set-AzImageOsDisk -Image $imageConfig -OsState Generalized -OsType Linux -ManagedDiskId $Disk.ID
-        new-azimage -ImageName $ImageName -ResourceGroupName $ResourceGroupName -image $imageconfig -ErrorAction SilentlyContinue
+        write-output "Creating image $ImageName ..."
+        $urlOfUploadedVhd = $storageaccount.PrimaryEndpoints.Blob + "${HelperVMContainerName}/${ImageName}"
+        $diskConfig = New-AzDiskConfig -SkuName $StorageAccountType -Location $LocationName -HyperVGeneration $HyperVGeneration -OsType Linux -CreateOption Import -StorageAccountId $storageaccount.Id -SourceUri $urlOfUploadedVhd
+        $ImportedDisk = New-AzDisk -Disk $diskConfig -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDataDiskName
+        $imageConfig = New-AzImageConfig -Location $LocationName -HyperVGeneration $HyperVGeneration
+        $imageConfig = Set-AzImageOsDisk -Image $imageConfig -OsState Generalized -OsType Linux -ManagedDiskId $ImportedDisk.Id
+        $image = New-AzImage -ImageName $ImageName -ResourceGroupName $ResourceGroupName -Image $imageConfig
+        $ImageCreated = $true
+        write-output "Image created: $($image.Id)"
     }
-}
-
-# Delete virtual machine with its objects
-$AzImage=get-AzImage | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.location -ieq $LocationName) -and ($_.name -ieq $Imagename)}
-if ([Object]::ReferenceEquals($AzImage,$null))
-{
-    write-Output "Error: Image creation failed."
-}
-
-
-$obj=Get-AzVM -ResourceGroupName $ResourceGroupName -Name $HelperVMName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-    $HelperVMDiskName=$obj.StorageProfile.OsDisk.Name
-    Remove-AzVM -ResourceGroupName $resourceGroupName -Name $HelperVMName -force -ErrorAction SilentlyContinue
-    $obj=Get-AzDisk -ResourceGroupName $resourceGroupName -DiskName $HelperVMDiskName -ErrorAction SilentlyContinue
-    if (-not ([Object]::ReferenceEquals($obj,$null)))
+    finally
     {
-        Remove-AzDisk -ResourceGroupName $resourceGroupName -DiskName $HelperVMDiskName -Force -ErrorAction SilentlyContinue
+        foreach ($file in @($contextfile, $ScriptFile)) { if (test-path $file) { remove-item -path $file -force -ErrorAction SilentlyContinue } }
+        if ($SkipCleanup) { write-output "SkipCleanup: the helper VM $HelperVMName, its resources and storage account $StorageAccountName are kept." }
+        else
+        {
+            write-output "Removing helper resources ..."
+            Remove-HelperVMResources
+            try
+            {
+                if (Get-AzResourceOrNull { Get-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName })
+                {
+                    $null = Remove-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Force
+                }
+            }
+            catch { Write-Warning "Cleanup of storage account $StorageAccountName failed: $($_.Exception.Message)" }
+        }
+        if (-not $ImageCreated) { write-output "Error: Image creation failed." }
     }
-}
-
-
-
-$obj=Get-AzNetworkInterface -ResourceGroupName $resourceGroupName -Name $HelperVMNICName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-	Remove-AzNetworkInterface -Name $HelperVMNICName -ResourceGroupName $ResourceGroupName -force -ErrorAction SilentlyContinue
-}
-
-$obj=Get-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $HelperVMPublicIPDNSName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-	Remove-AzPublicIpAddress -ResourceGroupName $ResourceGroupName -Name $HelperVMPublicIPDNSName -Force -ErrorAction SilentlyContinue
-}
-
-$obj=Get-AzVirtualNetwork -Name $HelperVMNetworkName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-	Remove-AzVirtualNetwork -Name $HelperVMNetworkName -ResourceGroupName $ResourceGroupName -Force -ErrorAction SilentlyContinue
-}
-
-$obj=Get-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-	Remove-AzNetworkSecurityGroup -Name $HelperVMnsgName -ResourceGroupName $ResourceGroupName -Force -ErrorAction SilentlyContinue
-}
-
-$obj=Get-AzStorageContainer -Name ${HelperVMContainerName} -Context $storageaccount.Context  -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-	Remove-AzStorageContainer -Name ${HelperVMContainerName} -Context $storageaccount.Context -Force -ErrorAction SilentlyContinue
-}
-
-$obj=Get-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -ErrorAction SilentlyContinue
-if (-not ([Object]::ReferenceEquals($obj,$null)))
-{
-	Remove-azstorageaccount -ResourceGroupName $ResourceGroupName -Name $StorageAccountName -Force -ErrorAction SilentlyContinue
 }
