@@ -45,9 +45,15 @@
 #   1.11  11.07.2022   dcasota  text changes
 #   1.12  17.08.2022   dcasota  bugfixing
 #   2.00  26.01.2023   dcasota  iso url support added (does not work yet, NO AARCH64 SUPPORT YET)
+#   2.01  19.03.2023   dcasota  bugfix iso url support (TODO : aarch64 support, Linux HelperDiskname, replace hardcoded CustomScriptExtension version)
+#   2.02  31.03.2023   dcasota  Photon 5.0 rc urls added
 #
 # .PARAMETER DownloadURL
 #   Specifies the URL of the VMware Photon OS .iso file
+#        Photon OS 5.0 RC Full ISO x86_64                    https://packages.vmware.com/photon/5.0/RC/iso/photon-5.0-4d5974638.x86_64.iso
+#        Photon OS 5.0 RC Minimal ISO x86_64                 https://packages.vmware.com/photon/5.0/RC/iso/photon-minimal-5.0-4d5974638.x86_64.iso
+#        Photon OS 5.0 RC Real-Time ISO x86_64               https://packages.vmware.com/photon/5.0/RC/iso/photon-rt-5.0-4d5974638.x86_64.iso
+#        Photon OS 5.0 Beta Full ISO x86_64                  https://packages.vmware.com/photon/5.0/Beta/iso/photon-5.0-9e778f409.iso
 #        Photon OS 4.0 Rev2 Full ISO x86_64                  https://packages.vmware.com/photon/4.0/Rev2/iso/photon-4.0-c001795b8.iso
 #        Photon OS 4.0 Rev2 Full ISO arm64                   https://packages.vmware.com/photon/4.0/Rev2/iso/photon-4.0-c001795b8-aarch64.iso
 #        Photon OS 4.0 Rev2 Minimal ISO x86_64               https://packages.vmware.com/photon/4.0/Rev2/iso/photon-minimal-4.0-c001795b8.iso
@@ -64,6 +70,8 @@
 
 #   Specifies the URL of the VMware Photon OS .vhd.tar.gz file
 #      VMware Photon OS build download links:
+#        Photon OS 5.0 RC Azure VHD                          https://packages.vmware.com/photon/5.0/RC/azure/photon-azure-5.0-4d5974638.x86_64.vhd.tar.gz
+#        Photon OS 5.0 Beta Azure VHD                        https://packages.vmware.com/photon/5.0/Beta/azure/photon-azure-5.0-9e778f409.vhd.tar.gz
 #        Photon OS 4.0 Rev2 Azure VHD                        https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz
 #        Photon OS 4.0 Rev1 Azure VHD                        https://packages.vmware.com/photon/4.0/Rev1/azure/photon-azure-4.0-ca7c9e933.vhd.tar.gz
 #        Photon OS 4.0 GA Azure VHD                          https://packages.vmware.com/photon/4.0/GA/azure/photon-azure-4.0-1526e30ba.vhd.tar.gz
@@ -72,7 +80,7 @@
 #        Photon OS 3.0 Revision 2 Azure VHD                  https://packages.vmware.com/photon/3.0/Rev2/azure/photon-azure-3.0-9355405.vhd.tar.gz
 #        Photon OS 3.0 GA Azure VHD                          https://packages.vmware.com/photon/3.0/GA/azure/photon-azure-3.0-26156e2.vhd.tar.gz
 #        Photon OS 3.0 RC Azure VHD                          https://packages.vmware.com/photon/3.0/RC/azure/photon-azure-3.0-49fd219.vhd.tar.gz
-#        Photon OS 3.0 Beta                                  https://packages.vmware.com/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz
+#        Photon OS 3.0 Beta Azure VHD                        https://packages.vmware.com/photon/3.0/Beta/azure/photon-azure-3.0-5e45dc9.vhd.tar.gz
 #        Photon OS 2.0 GA Azure VHD gz file:                 https://packatares.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-304b817.vhd.gz
 #        Photon OS 2.0 GA Azure VHD cloud-init provisioning  https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz
 #        Photon OS 2.0 RC Azure VHD - gz file                https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz
@@ -100,7 +108,11 @@
 [CmdletBinding()]
 param(
 [Parameter(Mandatory = $true)][ValidateNotNull()]
-[ValidateSet(`
+[ValidateSet(
+'https://packages.vmware.com/photon/5.0/RC/iso/photon-5.0-4d5974638.x86_64.iso', `
+'https://packages.vmware.com/photon/5.0/RC/azure/photon-azure-5.0-4d5974638.x86_64.vhd.tar.gz', `
+'https://packages.vmware.com/photon/5.0/Beta/iso/photon-5.0-9e778f409.iso', `
+'https://packages.vmware.com/photon/5.0/Beta/azure/photon-azure-5.0-9e778f409.vhd.tar.gz', `
 'https://packages.vmware.com/photon/4.0/Rev2/iso/photon-4.0-c001795b8.iso', `
 'https://packages.vmware.com/photon/4.0/Rev2/iso/photon-4.0-c001795b8-aarch64.iso', `
 'https://packages.vmware.com/photon/4.0/Rev2/azure/photon-azure-4.0-c001795b8.vhd.tar.gz', `
@@ -116,7 +128,7 @@ param(
 'https://packages.vmware.com/photon/2.0/GA/azure/photon-azure-2.0-3146fa6.tar.gz', `
 'https://packages.vmware.com/photon/2.0/RC/azure/photon-azure-2.0-31bb961.vhd.gz', `
 'https://packages.vmware.com/photon/2.0/Beta/azure/photon-azure-2.0-8553d58.vhd')]
-[String]$DownloadURL="https://packages.vmware.com/photon/4.0/Rev2/iso/photon-4.0-c001795b8.iso",
+[String]$DownloadURL="https://packages.vmware.com/photon/5.0/RC/iso/photon-5.0-4d5974638.x86_64.iso",
 
 [Parameter(Mandatory = $true)][ValidateNotNull()]
 [string]$LocationName,
@@ -144,6 +156,8 @@ param(
 
 if ($DownloadURL.ToLower().EndsWith('.iso'))
 {
+    # override setting
+    $HyperVGeneration="V1"
     # Imagename is a .vhd file, generated using Ventoy with included Photon OS iso file
     [string]$ImageName=$(((split-path -path $([Reflection.Assembly]::LoadWithPartialName("System.Web") | Out-Null;[System.Web.HttpUtility]::UrlDecode($DownloadURL)) -Leaf) -split ".iso")[0] + "_iso_" + $HyperVGeneration + ".vhd")
     # Uri + Blobname
@@ -171,7 +185,7 @@ if (($DownloadURL.ToLower().EndsWith('-aarch64.iso')) -or ($DownloadURL.ToLower(
     $HelperVMPublisherName = "Canonical"
     $HelperVMofferName = "0001-com-ubuntu-server-jammy"
     $HelperVMsku = "22_04-lts-arm64"
-    $HelperVMsize="Standard_D32plds_v5"
+    $HelperVMsize="Standard_D2plds_v5"
     $HelperVMsize_TempPath="/dev/sdb" # $DownloadURL file is downloaded and extracted on this drive inside vm. Depending of the VMSize offer, it includes built-in an additional non persistent  drive.
 }
 else
@@ -276,6 +290,18 @@ if ($tmpfilename.ToLower().EndsWith('.iso'))
     $tmpname=($tmpfilename -split ".iso")[0] + ".iso"
     $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar+($tmpfilename -split ".iso")[0] + ".vhd"
     $downloadfile=$vhdfile
+}
+elseif ($tmpfilename.ToLower().EndsWith('.x86_64.vhd.tar.gz'))
+{
+    $tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
+    $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar + ($tmpfilename -split ".x86_64.vhd.tar.gz")[0] + ".vhd"
+    $downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
+}
+elseif ($tmpfilename.ToLower().EndsWith('.aarch64.vhd.tar.gz'))
+{
+    $tmpname=($tmpfilename -split ".vhd")[0] + ".vhd"
+    $vhdfile=$tmppath + [io.path]::DirectorySeparatorChar + ($tmpfilename -split ".aarch64.vhd.tar.gz")[0] + ".vhd"
+    $downloadfile=$tmppath + [io.path]::DirectorySeparatorChar+$tmpfilename
 }
 else
 {
@@ -418,6 +444,7 @@ if (Test-Path -d $tmppath)
                     {
                         #Add Lines after the selected pattern 
                         $FileModified += "serial --unit=0 --speed=115200"
+                        $FileModified += "serial --unit=1 --speed=115200"
                     } 
                 }
                 Set-Content -Path $fileName -Value $FileModified -Force
@@ -433,6 +460,7 @@ if (Test-Path -d $tmppath)
                     {
                         #Add Lines after the selected pattern 
                         $FileModified += "serial 0 115200"
+                        $FileModified += "serial 1 115200"
                     } 
                 }
                 Set-Content -Path $fileName -Value $FileModified -Force
@@ -446,6 +474,7 @@ if (Test-Path -d $tmppath)
                     if ( $Line.Trim() -ilike "*$Pattern*" ) 
                     {
                         $FileModified += [System.String]::Concat($Line," console=ttyS0,115200")
+                        $FileModified += [System.String]::Concat($Line," console=ttyS1,115200")
                     }
                     else
                     {
@@ -685,13 +714,16 @@ if (-not $($Disk))
 			Set-AzVMSourceImage -PublisherName $HelperVMPublisherName -Offer $HelperVMofferName -Skus $HelperVMsku -Version $productversion		
 			$vmConfig | Set-AzVMBootDiagnostic -Disable
 
-            $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
-            if (-not $($Disk))
+            if ($DownloadURL.ToLower().EndsWith('.iso'))
             {
-                $diskConfig = New-AzDiskConfig -AccountType 'Standard_LRS' -Location $LocationName -HyperVGeneration $HyperVGeneration -CreateOption Empty -DiskSizeGB ${HelperVMDiskSizeGB} -OSType Linux
-                $Disk = New-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDiskName -Disk $diskConfig
-                do {start-sleep -Milliseconds 1000} until ($((get-azdisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDiskName).ProvisioningState) -ieq "Succeeded")
-                $vmConfig = Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $Disk.Id -Name $HelperVMDiskName -Lun 1 -CreateOption Attach
+                $Disk = Get-AzDisk | where-object {($_.resourcegroupname -ieq $ResourceGroupName) -and ($_.Name -ieq $HelperVMDiskName)}
+                if (-not $($Disk))
+                {
+                    $diskConfig = New-AzDiskConfig -AccountType 'Standard_LRS' -Location $LocationName -HyperVGeneration $HyperVGeneration -CreateOption Empty -DiskSizeGB ${HelperVMDiskSizeGB} -OSType Linux
+                    $Disk = New-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDiskName -Disk $diskConfig
+                    do {start-sleep -Milliseconds 1000} until ($((get-azdisk -ResourceGroupName $ResourceGroupName -DiskName $HelperVMDiskName).ProvisioningState) -ieq "Succeeded")
+                    $vmConfig = Add-AzVMDataDisk -VM $vmConfig -ManagedDiskId $Disk.Id -Name $HelperVMDiskName -Lun 1 -CreateOption Attach
+                }
             }
 
 			# Create the virtual machine		
@@ -754,8 +786,14 @@ if (-not $($Disk))
         start-sleep 15
 
         # Run scriptfile
-        $Run = "C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.14\Downloads\0\$BlobTmp"
+        $Run = "C:\Packages\Plugins\Microsoft.Compute.CustomScriptExtension\1.10.15\Downloads\0\$BlobTmp"
         Set-AzVMCustomScriptExtension -Name "CustomScriptExtension" -Location $LocationName -ResourceGroupName $ResourceGroupName -VMName $HelperVMName -StorageAccountName $StorageAccountName -ContainerName $HelperVMContainerName -FileName $BlobTmp -Run $Run
+
+        if ($DownloadURL.ToLower().EndsWith('.iso'))
+        {
+            $HelperVMDiskName=((get-azdisk | where-object {$_.OsType -ieq 'Linux'})[0]).Name
+        }
+        else {$HelperVMDiskName=$ImageName}
 	}
 }
 
