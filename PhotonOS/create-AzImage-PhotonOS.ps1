@@ -73,6 +73,8 @@
 #                               DownloadURL is deprecated. Image and disk names are shortened to the Azure limits.
 #   2.21  15.09.2026   dcasota  Bugfix architecture detection: the aarch64/arm64 or x86_64/amd64 token is found anywhere in the file name
 #                               (e.g. photon-5.0-3de6164e1.aarch64.azure.iso). New parameter Architecture overrides the file name.
+#   2.22  15.09.2026   dcasota  Bugfix location display names with spaces (e.g. "UK South"): LocationName is normalized to the Azure location name,
+#                               the gallery name is validated before any resource is created.
 #
 # .PARAMETER FilePath
 #   Web url (http or https) or local file path of a VMware Photon OS .iso, .vhd, .vhd.gz or .vhd.tar.gz file.
@@ -119,7 +121,8 @@
 # .PARAMETER DownloadURL
 #   Deprecated, use FilePath. Accepts the download links listed above.
 # .PARAMETER LocationName
-#   Azure location name where to create or lookup the resources. Default is westeurope for aarch64 files, otherwise switzerlandnorth.
+#   Azure location name (e.g. uksouth) or display name (e.g. "UK South") where to create or lookup the resources.
+#   Default is westeurope for aarch64 files, otherwise switzerlandnorth.
 # .PARAMETER ResourceGroupName
 #   resource group name
 # .PARAMETER RuntimeId
@@ -139,7 +142,8 @@
 # .PARAMETER HelperVMDiskSizeGB
 #   Size of the Ventoy data disk (iso file only)
 # .PARAMETER GalleryName
-#   Azure Compute Gallery name (iso file only). Default is PhotonOS_<LocationName>.
+#   Azure Compute Gallery name (iso file only). Default is PhotonOS_<location name>, e.g. PhotonOS_uksouth.
+#   Letters and digits, with underscores and periods in the middle, up to 80 characters.
 # .PARAMETER VentoyVersion
 #   Ventoy release used to make the data disk bootable (iso file only)
 # .PARAMETER SkipCleanup
@@ -295,8 +299,6 @@ if ([string]::IsNullOrEmpty($HelperVMSize))
     elseif ($IsIso) { $HelperVMSize = 'Standard_D2s_v3' }
     else { $HelperVMSize = 'Standard_E2s_v3' }
 }
-
-if ([string]::IsNullOrEmpty($GalleryName)) { $GalleryName = "PhotonOS_${LocationName}" }
 
 
 function Get-AzSafeName([string]$Name, [int]$MaxLength)
@@ -518,6 +520,20 @@ if ([Object]::ReferenceEquals($azconnect,$null))
         write-output "Azure Powershell login required."
         return
     }
+}
+
+# Location: the Azure location name (e.g. uksouth) or its display name (e.g. "UK South") is normalized to the location name,
+# which is used in resource names like the gallery name.
+$azLocation = Get-AzLocation | Where-Object { ($_.Location -ieq $LocationName) -or ($_.DisplayName -ieq $LocationName) -or ($_.Location -ieq ($LocationName -replace '\s', '')) } | Select-Object -First 1
+if (-not $azLocation) { throw "Location '$LocationName' is unknown. Use an Azure location name like westeurope, switzerlandnorth or uksouth (see Get-AzLocation)." }
+if ($azLocation.Location -cne $LocationName) { write-output "Location '$LocationName' is used as $($azLocation.Location)." }
+$LocationName = $azLocation.Location
+
+# Gallery name rules are checked before any resource is created
+if ([string]::IsNullOrEmpty($GalleryName)) { $GalleryName = "PhotonOS_${LocationName}" }
+if ($IsIso -and ($GalleryName -notmatch '^[A-Za-z0-9](?:[A-Za-z0-9_.]{0,78}[A-Za-z0-9])?$'))
+{
+    throw "Gallery name '$GalleryName' is invalid. Allowed are letters and digits, with underscores and periods in the middle, up to 80 characters."
 }
 
 write-output "Photon OS $Architecture $(if ($IsIso) {'iso'} else {'vhd'}) $(if ($IsLocalFile) {'local file'} else {'web url'}): $DownloadFileName"

@@ -38,10 +38,13 @@
 # 0.73  28.01.2023   dcasota  Bugfixing
 # 0.80  14.09.2026   dcasota  Azure Compute Gallery images (Arm64, specialized Photon OS installer images) added, vm size and quota preflight check,
 #                             LocationName defaults to the image location, managed boot diagnostics, standard public ip
+# 0.81  15.09.2026   dcasota  LocationName accepts display names with spaces (e.g. "UK South") and is normalized to the Azure location name,
+#                             the image must be available in that location
 #
 # .PARAMETER
 # Parameter LocationName
-#    Azure location name where to create or lookup the resource group. Default is the location of the image.
+#    Azure location name (e.g. uksouth) or display name (e.g. "UK South") where to create or lookup the resource group.
+#    Default is the location of the image. The image must be available in that location.
 # Parameter ResourceGroupNameImage
 #    Azure resource group name of the Azure image or gallery
 # Parameter GalleryName
@@ -240,6 +243,7 @@ if ([string]::IsNullOrEmpty($GalleryName))
     }
     $ImageId = $image.Id
     $ImageLocation = $image.Location
+    $ImageRegions = @($image.Location)
     $ImageArchitecture = 'x64'
     $IsSpecialized = $false
 }
@@ -266,12 +270,37 @@ else
         }
         $ImageId = $version.Id
     }
+    # regions the image version(s) are replicated to, e.g. "West Europe"
+    if ($version) { $versions = @($version) } else { $versions = @(Get-AzResourceOrNull { Get-AzGalleryImageVersion -ResourceGroupName $ResourceGroupNameImage -GalleryName $GalleryName -GalleryImageDefinitionName $ImageName }) | Where-Object { $_ } }
+    if (-not $versions)
+    {
+        write-output "Image definition $ImageName in gallery $GalleryName has no image version."
+        return
+    }
+    $ImageRegions = @($versions | ForEach-Object { $_.PublishingProfile.TargetRegions.Name })
     $ImageLocation = $definition.Location
     if ([string]::IsNullOrEmpty($definition.Architecture)) { $ImageArchitecture = 'x64' } else { $ImageArchitecture = $definition.Architecture }
     $IsSpecialized = ($definition.OsState -ieq 'Specialized')
 }
 
+# Location: the Azure location name (e.g. uksouth) or its display name (e.g. "UK South") is normalized to the location name
+$azLocations = Get-AzLocation
+function ConvertTo-AzLocationName([string]$Name)
+{
+    ($azLocations | Where-Object { ($_.Location -ieq $Name) -or ($_.DisplayName -ieq $Name) -or ($_.Location -ieq ($Name -replace '\s', '')) } | Select-Object -First 1).Location
+}
 if ([string]::IsNullOrEmpty($LocationName)) { $LocationName = $ImageLocation }
+$normalizedLocation = ConvertTo-AzLocationName $LocationName
+if (-not $normalizedLocation) { throw "Location '$LocationName' is unknown. Use an Azure location name like westeurope, switzerlandnorth or uksouth (see Get-AzLocation)." }
+if ($normalizedLocation -cne $LocationName) { write-output "Location '$LocationName' is used as $normalizedLocation." }
+$LocationName = $normalizedLocation
+
+# The image must be available in the VM location
+$ImageRegions = @($ImageRegions | ForEach-Object { ConvertTo-AzLocationName $_ } | Where-Object { $_ } | Select-Object -Unique)
+if ($ImageRegions -and ($ImageRegions -notcontains $LocationName))
+{
+    throw "Image $ImageName is not available in $LocationName, only in: $($ImageRegions -join ', '). Specify -LocationName accordingly or replicate the image."
+}
 if ([string]::IsNullOrEmpty($VMSize))
 {
     if ($ImageArchitecture -eq 'Arm64') { $VMSize = 'Standard_D2pls_v5' } else { $VMSize = 'Standard_B1ms' }
