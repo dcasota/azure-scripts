@@ -71,10 +71,13 @@
 #                               vm size and quota preflight check, rerun detection, cleanup on failure.
 #   2.20  14.09.2026   dcasota  New parameter FilePath for web urls and local files. Local files are uploaded to a temporary blob, which is deleted at the end.
 #                               DownloadURL is deprecated. Image and disk names are shortened to the Azure limits.
+#   2.21  15.09.2026   dcasota  Bugfix architecture detection: the aarch64/arm64 or x86_64/amd64 token is found anywhere in the file name
+#                               (e.g. photon-5.0-3de6164e1.aarch64.azure.iso). New parameter Architecture overrides the file name.
 #
 # .PARAMETER FilePath
 #   Web url (http or https) or local file path of a VMware Photon OS .iso, .vhd, .vhd.gz or .vhd.tar.gz file.
-#   The architecture is taken from the file name (aarch64 or x86_64). Examples of web urls:
+#   The architecture is taken from the file name: an aarch64 or arm64 token means Arm64, an x86_64, amd64 or x64 token means x64.
+#   A file name without token is x64. Use -Architecture to override. Examples of web urls:
 #        Photon OS 5.0 GA Full ISO arm64                     https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso
 #        Photon OS 5.0 GA Minimal ISO arm64                  https://packages.vmware.com/photon/5.0/GA/iso/photon-minimal-5.0-dde71ec57.aarch64.iso
 #        Photon OS 5.0 GA Full ISO x86_64                    https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.x86_64.iso
@@ -127,6 +130,8 @@
 #   storage kind
 # .PARAMETER StorageAccountType
 #   storage account type
+# .PARAMETER Architecture
+#   Arm64 or x64. Overrides the architecture taken from the file name, e.g. for custom builds without aarch64/x86_64 in the name.
 # .PARAMETER HyperVGeneration
 #   Azure HyperVGeneration. Arm64 supports V2 only.
 # .PARAMETER HelperVMSize
@@ -144,6 +149,7 @@
 #    ./create-AzImage-PhotonOS.ps1 -ResourceGroupName PhotonOSTemplates
 #    ./create-AzImage-PhotonOS.ps1 -FilePath "https://packages.vmware.com/photon/5.0/GA/iso/photon-5.0-dde71ec57.aarch64.iso" -ResourceGroupName PhotonOSTemplates -LocationName westeurope -HelperVMSize Standard_D2pls_v5
 #    ./create-AzImage-PhotonOS.ps1 -FilePath "c:\users\dcaso\Downloads\Ph-Builds\photon-minimal-5.0-dde71ec57.x86_64.iso" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth
+#    ./create-AzImage-PhotonOS.ps1 -FilePath "c:\users\dcaso\Downloads\Ph-Builds\photon-5.0-3de6164e1.aarch64.azure.iso" -ResourceGroupName PhotonOSTemplates -LocationName westeurope -HelperVMSize Standard_D2pls_v6
 #    ./create-AzImage-PhotonOS.ps1 -FilePath "https://packages.vmware.com/photon/5.0/GA/azure/photon-azure-5.0-dde71ec57.x86_64.vhd.tar.gz" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth -HyperVGeneration V2
 #
 #>
@@ -199,6 +205,9 @@ param(
 [Parameter(Mandatory = $false)]
 [string]$StorageAccountType="Standard_LRS",
 
+[Parameter(Mandatory = $false)][ValidateSet('Arm64','x64')]
+[string]$Architecture,
+
 [Parameter(Mandatory = $false)][ValidateSet('V1','V2')]
 [string]$HyperVGeneration="V2",
 
@@ -249,7 +258,24 @@ if (-not ($IsIso -or ($DownloadFileName -match '\.(vhd|vhd\.gz|tar\.gz)$')))
 {
     throw "$DownloadFileName is not a supported file type (.iso, .vhd, .vhd.gz, .vhd.tar.gz, .tar.gz)."
 }
-if ($DownloadFileName -match '[.-]aarch64\.(iso|vhd\.tar\.gz)$') { $Architecture = 'Arm64' } else { $Architecture = 'x64' }
+# Architecture: -Architecture, otherwise the architecture token anywhere in the file name, e.g. photon-5.0-3de6164e1.aarch64.azure.iso
+$NameIsArm64 = $DownloadFileName -match '(?i)(^|[._-])(aarch64|arm64)([._-]|$)'
+$NameIsX64 = $DownloadFileName -match '(?i)(^|[._-])(x86_64|amd64|x64)([._-]|$)'
+if ([string]::IsNullOrEmpty($Architecture))
+{
+    if ($NameIsArm64 -and $NameIsX64) { throw "$DownloadFileName contains both an aarch64 and an x86_64 token. Specify -Architecture Arm64 or -Architecture x64." }
+    elseif ($NameIsArm64) { $Architecture = 'Arm64' }
+    else
+    {
+        # Photon OS file names without token, e.g. photon-4.0-c001795b8.iso or the Azure vhd files, are x86_64
+        if (-not $NameIsX64) { write-output "No aarch64 or x86_64 token in $DownloadFileName, x64 is assumed. Use -Architecture to override." }
+        $Architecture = 'x64'
+    }
+}
+elseif ((($Architecture -eq 'Arm64') -and $NameIsX64 -and -not $NameIsArm64) -or (($Architecture -eq 'x64') -and $NameIsArm64 -and -not $NameIsX64))
+{
+    Write-Warning "-Architecture $Architecture overrides the architecture of the file name $DownloadFileName."
+}
 
 if ($Architecture -eq 'Arm64')
 {
