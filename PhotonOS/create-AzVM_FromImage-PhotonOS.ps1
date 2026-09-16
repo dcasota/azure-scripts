@@ -9,7 +9,9 @@
 #    - Managed image of a Photon OS Azure vhd, e.g. photon-azure-5.0-dde71ec57.x86_64_V2.vhd. The image already contains the information if it is a HyperVGeneration V1 or V2 image.
 #      The vm local admin credential is applied by the Azure provisioning.
 #    - Azure Compute Gallery image of a Photon OS iso, e.g. -GalleryName PhotonOS_westeurope -ImageName photon-5.0-dde71ec57.aarch64_iso_V2.
-#      The image is specialized and boots the Photon OS installer. Connect with the Azure serial console. An empty data disk is added as installation target.
+#      The image is specialized and boots the Photon OS installer. Connect with the Azure serial console.
+#      An empty managed disk is created with OsType Linux and the image HyperVGeneration, then attached as installation target
+#      so it can later be swapped as the VM OS disk.
 #      Architecture (x64/Arm64) and HyperVGeneration are read from the image definition.
 #
 #  The script checks the Az module and triggers an Azure login using the device code method. You get a similar message to
@@ -40,6 +42,11 @@
 #                             LocationName defaults to the image location, managed boot diagnostics, standard public ip
 # 0.81  15.09.2026   dcasota  LocationName accepts display names with spaces (e.g. "UK South") and is normalized to the Azure location name,
 #                             the image must be available in that location
+# 0.83  15.09.2026   dcasota  Assign HyperVGeneration from the image and create the install disk with that generation
+# 0.84  15.09.2026   dcasota  Do not pass -HyperVGeneration to New-AzVMConfig (not present in all Az.Compute versions);
+#                             the VM generation is taken from the gallery/managed image
+# 0.85  15.09.2026   dcasota  Stamp install disk SupportedCapabilities.Architecture (Arm64/x64) so Swap OS disk
+#                             works on Arm64 VM sizes such as Standard_D2pls_v6
 #
 # .PARAMETER
 # Parameter LocationName
@@ -66,7 +73,7 @@
 # Parameter VMSize
 #    Azure virtual machine size offering
 # Parameter InstallDiskSizeGB
-#    Size of the empty data disk added for specialized installer images
+#    Size of the empty install disk added for specialized installer images (created with the image HyperVGeneration)
 # Parameter nsgName
 #    network security group name
 # Parameter NetworkName
@@ -246,6 +253,7 @@ if ([string]::IsNullOrEmpty($GalleryName))
     $ImageRegions = @($image.Location)
     $ImageArchitecture = 'x64'
     $IsSpecialized = $false
+    $HyperVGeneration = $image.HyperVGeneration
 }
 else
 {
@@ -281,7 +289,18 @@ else
     $ImageLocation = $definition.Location
     if ([string]::IsNullOrEmpty($definition.Architecture)) { $ImageArchitecture = 'x64' } else { $ImageArchitecture = $definition.Architecture }
     $IsSpecialized = ($definition.OsState -ieq 'Specialized')
+    $HyperVGeneration = $definition.HyperVGeneration
 }
+
+# HyperVGeneration must be identical on the VM and on the install disk. Prefer the image metadata;
+# fall back to a _V1/_V2 suffix in the image name (Photon OS convention), then V2.
+if ([string]::IsNullOrEmpty($HyperVGeneration))
+{
+    if ($ImageName -match '_V1(\b|$)') { $HyperVGeneration = 'V1' }
+    elseif ($ImageName -match '_V2(\b|$)') { $HyperVGeneration = 'V2' }
+    else { $HyperVGeneration = 'V2' }
+}
+write-output "Using HyperVGeneration $HyperVGeneration."
 
 # Location: the Azure location name (e.g. uksouth) or its display name (e.g. "UK South") is normalized to the location name
 $azLocations = Get-AzLocation
@@ -353,13 +372,42 @@ if ( -not $($nic))
 }
 
 # create virtual machine
+# VM generation comes from the source image. New-AzVMConfig -HyperVGeneration is not
+# available in every Az.Compute version, so it is not passed here.
 $VM = New-AzVMConfig -VMName $VMName -VMSize $VMSize
 if ($IsSpecialized)
 {
-    # no OS profile: the Photon OS installer image has no Azure provisioning agent.
+	# no OS profile: the Photon OS installer image has no Azure provisioning agent.
     # Without OS profile New-AzVM assumes Windows and adds the BGInfo extension, which waits for a VM agent forever.
     $VM = Set-AzVMOSDisk -VM $VM -CreateOption FromImage -Linux
-    $VM = Add-AzVMDataDisk -VM $VM -Name "${VMName}_installdisk" -Lun 0 -CreateOption Empty -DiskSizeInGB $InstallDiskSizeGB
+    # Do not use Add-AzVMDataDisk -CreateOption Empty: that creates a data disk with no
+    # HyperVGeneration/OsType and it cannot be swapped in as the OS disk.
+    # Create an OS-capable empty disk with the same generation as the VM, then attach it.
+    $installDiskName = "${VMName}_installdisk"
+    $installDiskSku = 'Premium_LRS'
+    $vmSku = Get-AzComputeResourceSku -Location $LocationName | Where-Object { ($_.ResourceType -eq 'virtualMachines') -and ($_.Name -ieq $VMSize) } | Select-Object -First 1
+    if ($vmSku -and (($vmSku.Capabilities | Where-Object Name -eq 'PremiumIO').Value -ne 'True')) { $installDiskSku = 'StandardSSD_LRS' }
+    $installDiskParams = @{
+        Location         = $LocationName
+        CreateOption     = 'Empty'
+        DiskSizeGB       = $InstallDiskSizeGB
+        SkuName          = $installDiskSku
+        OsType           = 'Linux'
+        HyperVGeneration = $HyperVGeneration
+    }
+    # CPU architecture on the OS-capable install disk must match the VM size (Arm64 vs x64).
+    if ((Get-Command New-AzDiskConfig).Parameters.ContainsKey('Architecture') -and -not [string]::IsNullOrEmpty($ImageArchitecture))
+    {
+        $installDiskParams['Architecture'] = $ImageArchitecture
+    }
+    $installDiskConfig = New-AzDiskConfig @installDiskParams
+    $installDisk = New-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $installDiskName -Disk $installDiskConfig
+    if ($installDisk.SupportedCapabilities -and [string]::IsNullOrEmpty($installDisk.SupportedCapabilities.Architecture) -and -not [string]::IsNullOrEmpty($ImageArchitecture))
+    {
+        $installDisk.SupportedCapabilities.Architecture = $ImageArchitecture
+        $null = Update-AzDisk -ResourceGroupName $ResourceGroupName -DiskName $installDiskName -Disk $installDisk
+    }
+    $VM = Add-AzVMDataDisk -VM $VM -Name $installDiskName -Lun 0 -CreateOption Attach -ManagedDiskId $installDisk.Id
 }
 else
 {
@@ -379,5 +427,5 @@ if (!($VM))
 }
 if ($IsSpecialized)
 {
-    write-output "VM $VMName boots the Photon OS installer. Open the Azure serial console of the VM to proceed with the installation onto disk ${VMName}_installdisk."
+    write-output "VM $VMName boots the Photon OS installer. Open the Azure serial console of the VM to proceed with the installation onto disk ${VMName}_installdisk (Linux, HyperVGeneration $HyperVGeneration)."
 }
