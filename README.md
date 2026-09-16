@@ -36,7 +36,7 @@ ISO example (URL):
 ISO example (local file, x86_64):
 
 ```powershell
-./create-AzImage-PhotonOS.ps1 -FilePath "c:\users\dcaso\Downloads\Ph-Builds\photon-minimal-5.0-dde71ec57.x86_64.iso" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth
+./create-AzImage-PhotonOS.ps1 -FilePath ".\photon-minimal-5.0-dde71ec57.x86_64.iso" -ResourceGroupName PhotonOSTemplates -LocationName switzerlandnorth
 ```
 
 VHD example (URL, x86_64):
